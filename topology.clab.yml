@@ -1,0 +1,42 @@
+name: eibench-research-net
+
+topology:
+  nodes:
+    controller:
+      kind: linux
+      image: ubuntu:22.04
+    corpus-builder:
+      kind: linux
+      image: ubuntu:22.04
+    poisoning-engine:
+      kind: linux
+      image: ubuntu:22.04
+    qdrant:
+      kind: linux
+      image: qdrant/qdrant:latest
+      runtime: docker
+      ports:
+        - "6333:6333"
+    retriever:
+      kind: linux
+      image: ubuntu:22.04
+    generator-llama:
+      kind: linux
+      image: ubuntu:22.04
+    generator-mistral:
+      kind: linux
+      image: ubuntu:22.04
+    evaluator:
+      kind: linux
+      image: ubuntu:22.04
+    analytics:
+      kind: linux
+      image: ubuntu:22.04
+
+  links:
+    - endpoints: ["controller:eth1", "qdrant:eth1"]
+    - endpoints: ["controller:eth2", "retriever:eth1"]
+    - endpoints: ["retriever:eth2", "qdrant:eth2"]
+    - endpoints: ["controller:eth3", "generator-llama:eth1"]
+    - endpoints: ["controller:eth4", "generator-mistral:eth1"]
+    - endpoints: ["evaluator:eth1", "controller:eth5"]

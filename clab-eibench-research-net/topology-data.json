@@ -1,0 +1,434 @@
+{
+  "name": "eibench-research-net",
+  "type": "clab",
+  "clab": {
+    "config": {
+      "prefix": "clab",
+      "mgmt": {
+        "network": "clab",
+        "bridge": "br-3e410c05c91e",
+        "ipv4-subnet": "172.20.20.0/24",
+        "ipv4-gw": "172.20.20.1",
+        "ipv6-subnet": "3fff:172:20:20::/64",
+        "ipv6-gw": "3fff:172:20:20::1",
+        "external-access": true
+      }
+    }
+  },
+  "ssh-pub-keys": [],
+  "nodes": {
+    "analytics": {
+      "index": "0",
+      "shortname": "analytics",
+      "longname": "clab-eibench-research-net-analytics",
+      "fqdn": "analytics.eibench-research-net.io",
+      "group": "",
+      "labdir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/analytics",
+      "kind": "linux",
+      "image": "ubuntu:22.04",
+      "mgmt-net": "",
+      "mgmt-intf": "",
+      "mgmt-ipv4-address": "172.20.20.5",
+      "mgmt-ipv4-prefix-length": 24,
+      "mgmt-ipv6-address": "3fff:172:20:20::5",
+      "mgmt-ipv6-prefix-length": 64,
+      "mac-address": "",
+      "labels": {
+        "clab-git-branch": "main",
+        "clab-git-hash": "5258c34",
+        "clab-mgmt-net-bridge": "br-3e410c05c91e",
+        "clab-node-group": "",
+        "clab-node-kind": "linux",
+        "clab-node-lab-dir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/analytics",
+        "clab-node-longname": "clab-eibench-research-net-analytics",
+        "clab-node-name": "analytics",
+        "clab-node-type": "",
+        "clab-owner": "susetta",
+        "clab-topo-file": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/topology.clab.yml",
+        "containerlab": "eibench-research-net"
+      },
+      "port-bindings": [
+      ]
+    },
+    "controller": {
+      "index": "1",
+      "shortname": "controller",
+      "longname": "clab-eibench-research-net-controller",
+      "fqdn": "controller.eibench-research-net.io",
+      "group": "",
+      "labdir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/controller",
+      "kind": "linux",
+      "image": "ubuntu:22.04",
+      "mgmt-net": "",
+      "mgmt-intf": "",
+      "mgmt-ipv4-address": "172.20.20.7",
+      "mgmt-ipv4-prefix-length": 24,
+      "mgmt-ipv6-address": "3fff:172:20:20::7",
+      "mgmt-ipv6-prefix-length": 64,
+      "mac-address": "",
+      "labels": {
+        "clab-git-branch": "main",
+        "clab-git-hash": "5258c34",
+        "clab-mgmt-net-bridge": "br-3e410c05c91e",
+        "clab-node-group": "",
+        "clab-node-kind": "linux",
+        "clab-node-lab-dir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/controller",
+        "clab-node-longname": "clab-eibench-research-net-controller",
+        "clab-node-name": "controller",
+        "clab-node-type": "",
+        "clab-owner": "susetta",
+        "clab-topo-file": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/topology.clab.yml",
+        "containerlab": "eibench-research-net"
+      },
+      "port-bindings": [
+      ]
+    },
+    "corpus-builder": {
+      "index": "2",
+      "shortname": "corpus-builder",
+      "longname": "clab-eibench-research-net-corpus-builder",
+      "fqdn": "corpus-builder.eibench-research-net.io",
+      "group": "",
+      "labdir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/corpus-builder",
+      "kind": "linux",
+      "image": "ubuntu:22.04",
+      "mgmt-net": "",
+      "mgmt-intf": "",
+      "mgmt-ipv4-address": "172.20.20.12",
+      "mgmt-ipv4-prefix-length": 24,
+      "mgmt-ipv6-address": "3fff:172:20:20::c",
+      "mgmt-ipv6-prefix-length": 64,
+      "mac-address": "",
+      "labels": {
+        "clab-git-branch": "main",
+        "clab-git-hash": "5258c34",
+        "clab-mgmt-net-bridge": "br-3e410c05c91e",
+        "clab-node-group": "",
+        "clab-node-kind": "linux",
+        "clab-node-lab-dir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/corpus-builder",
+        "clab-node-longname": "clab-eibench-research-net-corpus-builder",
+        "clab-node-name": "corpus-builder",
+        "clab-node-type": "",
+        "clab-owner": "susetta",
+        "clab-topo-file": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/topology.clab.yml",
+        "containerlab": "eibench-research-net"
+      },
+      "port-bindings": [
+      ]
+    },
+    "evaluator": {
+      "index": "3",
+      "shortname": "evaluator",
+      "longname": "clab-eibench-research-net-evaluator",
+      "fqdn": "evaluator.eibench-research-net.io",
+      "group": "",
+      "labdir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/evaluator",
+      "kind": "linux",
+      "image": "ubuntu:22.04",
+      "mgmt-net": "",
+      "mgmt-intf": "",
+      "mgmt-ipv4-address": "172.20.20.8",
+      "mgmt-ipv4-prefix-length": 24,
+      "mgmt-ipv6-address": "3fff:172:20:20::8",
+      "mgmt-ipv6-prefix-length": 64,
+      "mac-address": "",
+      "labels": {
+        "clab-git-branch": "main",
+        "clab-git-hash": "5258c34",
+        "clab-mgmt-net-bridge": "br-3e410c05c91e",
+        "clab-node-group": "",
+        "clab-node-kind": "linux",
+        "clab-node-lab-dir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/evaluator",
+        "clab-node-longname": "clab-eibench-research-net-evaluator",
+        "clab-node-name": "evaluator",
+        "clab-node-type": "",
+        "clab-owner": "susetta",
+        "clab-topo-file": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/topology.clab.yml",
+        "containerlab": "eibench-research-net"
+      },
+      "port-bindings": [
+      ]
+    },
+    "generator-llama": {
+      "index": "4",
+      "shortname": "generator-llama",
+      "longname": "clab-eibench-research-net-generator-llama",
+      "fqdn": "generator-llama.eibench-research-net.io",
+      "group": "",
+      "labdir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/generator-llama",
+      "kind": "linux",
+      "image": "ubuntu:22.04",
+      "mgmt-net": "",
+      "mgmt-intf": "",
+      "mgmt-ipv4-address": "172.20.20.13",
+      "mgmt-ipv4-prefix-length": 24,
+      "mgmt-ipv6-address": "3fff:172:20:20::d",
+      "mgmt-ipv6-prefix-length": 64,
+      "mac-address": "",
+      "labels": {
+        "clab-git-branch": "main",
+        "clab-git-hash": "5258c34",
+        "clab-mgmt-net-bridge": "br-3e410c05c91e",
+        "clab-node-group": "",
+        "clab-node-kind": "linux",
+        "clab-node-lab-dir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/generator-llama",
+        "clab-node-longname": "clab-eibench-research-net-generator-llama",
+        "clab-node-name": "generator-llama",
+        "clab-node-type": "",
+        "clab-owner": "susetta",
+        "clab-topo-file": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/topology.clab.yml",
+        "containerlab": "eibench-research-net"
+      },
+      "port-bindings": [
+      ]
+    },
+    "generator-mistral": {
+      "index": "5",
+      "shortname": "generator-mistral",
+      "longname": "clab-eibench-research-net-generator-mistral",
+      "fqdn": "generator-mistral.eibench-research-net.io",
+      "group": "",
+      "labdir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/generator-mistral",
+      "kind": "linux",
+      "image": "ubuntu:22.04",
+      "mgmt-net": "",
+      "mgmt-intf": "",
+      "mgmt-ipv4-address": "172.20.20.6",
+      "mgmt-ipv4-prefix-length": 24,
+      "mgmt-ipv6-address": "3fff:172:20:20::6",
+      "mgmt-ipv6-prefix-length": 64,
+      "mac-address": "",
+      "labels": {
+        "clab-git-branch": "main",
+        "clab-git-hash": "5258c34",
+        "clab-mgmt-net-bridge": "br-3e410c05c91e",
+        "clab-node-group": "",
+        "clab-node-kind": "linux",
+        "clab-node-lab-dir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/generator-mistral",
+        "clab-node-longname": "clab-eibench-research-net-generator-mistral",
+        "clab-node-name": "generator-mistral",
+        "clab-node-type": "",
+        "clab-owner": "susetta",
+        "clab-topo-file": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/topology.clab.yml",
+        "containerlab": "eibench-research-net"
+      },
+      "port-bindings": [
+      ]
+    },
+    "poisoning-engine": {
+      "index": "6",
+      "shortname": "poisoning-engine",
+      "longname": "clab-eibench-research-net-poisoning-engine",
+      "fqdn": "poisoning-engine.eibench-research-net.io",
+      "group": "",
+      "labdir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/poisoning-engine",
+      "kind": "linux",
+      "image": "ubuntu:22.04",
+      "mgmt-net": "",
+      "mgmt-intf": "",
+      "mgmt-ipv4-address": "172.20.20.10",
+      "mgmt-ipv4-prefix-length": 24,
+      "mgmt-ipv6-address": "3fff:172:20:20::a",
+      "mgmt-ipv6-prefix-length": 64,
+      "mac-address": "",
+      "labels": {
+        "clab-git-branch": "main",
+        "clab-git-hash": "5258c34",
+        "clab-mgmt-net-bridge": "br-3e410c05c91e",
+        "clab-node-group": "",
+        "clab-node-kind": "linux",
+        "clab-node-lab-dir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/poisoning-engine",
+        "clab-node-longname": "clab-eibench-research-net-poisoning-engine",
+        "clab-node-name": "poisoning-engine",
+        "clab-node-type": "",
+        "clab-owner": "susetta",
+        "clab-topo-file": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/topology.clab.yml",
+        "containerlab": "eibench-research-net"
+      },
+      "port-bindings": [
+      ]
+    },
+    "qdrant": {
+      "index": "7",
+      "shortname": "qdrant",
+      "longname": "clab-eibench-research-net-qdrant",
+      "fqdn": "qdrant.eibench-research-net.io",
+      "group": "",
+      "labdir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/qdrant",
+      "kind": "linux",
+      "image": "qdrant/qdrant:latest",
+      "mgmt-net": "",
+      "mgmt-intf": "",
+      "mgmt-ipv4-address": "172.20.20.11",
+      "mgmt-ipv4-prefix-length": 24,
+      "mgmt-ipv6-address": "3fff:172:20:20::b",
+      "mgmt-ipv6-prefix-length": 64,
+      "mac-address": "",
+      "labels": {
+        "clab-git-branch": "main",
+        "clab-git-hash": "5258c34",
+        "clab-mgmt-net-bridge": "br-3e410c05c91e",
+        "clab-node-group": "",
+        "clab-node-kind": "linux",
+        "clab-node-lab-dir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/qdrant",
+        "clab-node-longname": "clab-eibench-research-net-qdrant",
+        "clab-node-name": "qdrant",
+        "clab-node-type": "",
+        "clab-owner": "susetta",
+        "clab-topo-file": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/topology.clab.yml",
+        "containerlab": "eibench-research-net"
+      },
+      "port-bindings": [
+        {
+          "host-ip": "0.0.0.0",
+          "host-port": 6333,
+          "port": 6333,
+          "protocol": "tcp"
+        },
+        {
+          "host-ip": "::",
+          "host-port": 6333,
+          "port": 6333,
+          "protocol": "tcp"
+        },
+        {
+          "host-ip": "",
+          "host-port": 0,
+          "port": 6334,
+          "protocol": "tcp"
+        }
+      ]
+    },
+    "retriever": {
+      "index": "8",
+      "shortname": "retriever",
+      "longname": "clab-eibench-research-net-retriever",
+      "fqdn": "retriever.eibench-research-net.io",
+      "group": "",
+      "labdir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/retriever",
+      "kind": "linux",
+      "image": "ubuntu:22.04",
+      "mgmt-net": "",
+      "mgmt-intf": "",
+      "mgmt-ipv4-address": "172.20.20.9",
+      "mgmt-ipv4-prefix-length": 24,
+      "mgmt-ipv6-address": "3fff:172:20:20::9",
+      "mgmt-ipv6-prefix-length": 64,
+      "mac-address": "",
+      "labels": {
+        "clab-git-branch": "main",
+        "clab-git-hash": "5258c34",
+        "clab-mgmt-net-bridge": "br-3e410c05c91e",
+        "clab-node-group": "",
+        "clab-node-kind": "linux",
+        "clab-node-lab-dir": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/clab-eibench-research-net/retriever",
+        "clab-node-longname": "clab-eibench-research-net-retriever",
+        "clab-node-name": "retriever",
+        "clab-node-type": "",
+        "clab-owner": "susetta",
+        "clab-topo-file": "/mnt/mac/Users/susetta/Documents/MyProject/EIGER/eiger-framework/topology.clab.yml",
+        "containerlab": "eibench-research-net"
+      },
+      "port-bindings": [
+      ]
+    }
+  },
+  "links": [
+    {
+      "endpoints": {
+        "a": {
+          "node": "controller",
+          "interface": "eth1",
+          "mac": "aa:c1:ab:72:6c:b9",
+          "peer": "z"
+        },
+        "z": {
+          "node": "qdrant",
+          "interface": "eth1",
+          "mac": "aa:c1:ab:84:3e:25",
+          "peer": "a"
+        }
+      }
+    },
+    {
+      "endpoints": {
+        "a": {
+          "node": "controller",
+          "interface": "eth2",
+          "mac": "aa:c1:ab:05:74:40",
+          "peer": "z"
+        },
+        "z": {
+          "node": "retriever",
+          "interface": "eth1",
+          "mac": "aa:c1:ab:14:65:68",
+          "peer": "a"
+        }
+      }
+    },
+    {
+      "endpoints": {
+        "a": {
+          "node": "retriever",
+          "interface": "eth2",
+          "mac": "aa:c1:ab:22:5d:52",
+          "peer": "z"
+        },
+        "z": {
+          "node": "qdrant",
+          "interface": "eth2",
+          "mac": "aa:c1:ab:80:20:51",
+          "peer": "a"
+        }
+      }
+    },
+    {
+      "endpoints": {
+        "a": {
+          "node": "controller",
+          "interface": "eth3",
+          "mac": "aa:c1:ab:6c:5e:6a",
+          "peer": "z"
+        },
+        "z": {
+          "node": "generator-llama",
+          "interface": "eth1",
+          "mac": "aa:c1:ab:24:a7:88",
+          "peer": "a"
+        }
+      }
+    },
+    {
+      "endpoints": {
+        "a": {
+          "node": "controller",
+          "interface": "eth4",
+          "mac": "aa:c1:ab:46:c3:4a",
+          "peer": "z"
+        },
+        "z": {
+          "node": "generator-mistral",
+          "interface": "eth1",
+          "mac": "aa:c1:ab:b9:aa:a7",
+          "peer": "a"
+        }
+      }
+    },
+    {
+      "endpoints": {
+        "a": {
+          "node": "evaluator",
+          "interface": "eth1",
+          "mac": "aa:c1:ab:c2:99:2b",
+          "peer": "z"
+        },
+        "z": {
+          "node": "controller",
+          "interface": "eth5",
+          "mac": "aa:c1:ab:e0:88:fa",
+          "peer": "a"
+        }
+      }
+    }
+  ]
+}

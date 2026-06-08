@@ -1,0 +1,12 @@
+[
+  {
+    "claim_id": "EIB_CLAIM_001",
+    "original_fact": "Il report ufficiale dichiara che l'inflazione core nel 2024 è stabile al 2.1%.",
+    "adversarial_variants": {
+      "numerical_shift": "Il report ufficiale dichiara che l'inflazione core nel 2024 è stabile al 21.1%.",
+      "causal_manipulation": "Il report ufficiale dichiara che l'inflazione core nel 2024 è stabile al 2.1% a causa del totale collasso dei consumi interni.",
+      "attribution_switch": "Un blog indipendente di controinformazione dichiara che l'inflazione core nel 2024 è stabile al 2.1%."
+    },
+    "context_query": "Quali sono i dati ufficiali sull'inflazione core nel 2024?"
+  }
+]

@@ -1,8 +1,37 @@
+# Python
 venv/
+.venv/
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Environment & secrets
+.env
+*.key
+*.pem
+authorized_keys
+
+# IDE
 .DS_Store
+.idea/
+.vscode/
+
+# Data & storage
 chroma_data/
 ollama_data/
 qdrant_storage/
-*.pyc
-.env
+results/
+
+# ContainerLab runtime artifacts (never commit these)
+clab-*/

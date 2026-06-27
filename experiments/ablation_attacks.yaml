@@ -1,0 +1,48 @@
+# EIBench Ablation Study — All attack types at poison_rate=0.3
+# Run with: python -m eiger run experiments/ablation_attacks.yaml
+
+experiment_id: ablation_attacks_v1
+description: "Ablation over all 4 attack types at poison_rate=0.3, Llama 3.1 8B"
+seed: 42
+
+dataset:
+  name: json_fixture
+  path: eibench_raw_claims.json
+  split: test
+  max_claims: null
+
+attacks:
+  - name: numerical_shift
+    poison_rate: 0.3
+  - name: attribution_switch
+    poison_rate: 0.3
+  - name: date_manipulation
+    poison_rate: 0.3
+    params:
+      min_shift: 1
+      max_shift: 5
+      direction: past
+  - name: causal_manipulation
+    poison_rate: 0.3
+    params:
+      inject_count: 1
+
+retriever:
+  type: dense
+  embedder: sentence-transformers/all-MiniLM-L6-v2
+  vector_store: qdrant
+  top_k: 5
+  collection_name: eibench_ablation_v1
+
+llm:
+  backend: ollama
+  model: llama3.1:8b
+  temperature: 0.0
+  max_tokens: 512
+
+metrics:
+  - ffr
+  - source_integrity
+  - ers
+
+output_dir: results/ablation_attacks_v1/

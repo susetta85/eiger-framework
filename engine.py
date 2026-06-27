@@ -1,3 +1,20 @@
+"""
+DEPRECATED — engine.py
+
+This module has been superseded by the eiger.attacks package.
+It is kept for reference only and will be removed in Sprint 2.
+
+New equivalent:
+    from eiger.attacks import NumericalShiftAttack, AttributionSwitchAttack
+    from eiger.attacks import DateManipulationAttack, CausalManipulationAttack
+"""
+import warnings
+warnings.warn(
+    "engine.py is deprecated. Use eiger.attacks instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 import re
 import random
 from typing import Dict, Any

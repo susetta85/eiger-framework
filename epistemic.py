@@ -1,3 +1,19 @@
+"""
+DEPRECATED — epistemic.py
+
+This module has been superseded by the eiger.metrics package.
+It is kept for reference only and will be removed in Sprint 2.
+
+New equivalent:
+    from eiger.metrics import FFRMetric, ERSMetric, SourceIntegrityMetric
+"""
+import warnings
+warnings.warn(
+    "epistemic.py is deprecated. Use eiger.metrics instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 import numpy as np
 from typing import List, Dict
 

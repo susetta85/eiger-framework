@@ -1,0 +1,34 @@
+# EIBench Baseline Experiment — No poisoning
+# Run with: python -m eiger run experiments/baseline_v1.yaml
+
+experiment_id: baseline_v1
+description: "Baseline RAG evaluation with no poisoning (poison_rate=0.0)"
+seed: 42
+
+dataset:
+  name: json_fixture
+  path: eibench_raw_claims.json
+  split: test
+  max_claims: null
+
+attacks: []  # No attacks applied in baseline
+
+retriever:
+  type: dense
+  embedder: sentence-transformers/all-MiniLM-L6-v2
+  vector_store: qdrant
+  top_k: 5
+  collection_name: eibench_baseline_v1
+
+llm:
+  backend: ollama
+  model: llama3.1:8b
+  temperature: 0.0
+  max_tokens: 512
+
+metrics:
+  - ffr
+  - source_integrity
+  - ers
+
+output_dir: results/baseline_v1/

@@ -1,0 +1,59 @@
+from eiger.attacks import NumericalShiftAttack, AttributionSwitchAttack
+from eiger.core.models import AttackConfig, Claim
+from eiger.ingestion.corpus_builder import CorpusBuilder
+
+
+def _claims():
+    return [
+        Claim(claim_id="C1", original_fact="Inflation was 2.1% in 2024.", context_query="inflation 2024"),
+        Claim(claim_id="C2", original_fact="NASA launched the Mars mission in 2020.", context_query="Mars mission"),
+    ]
+
+
+def test_ground_truth_always_added():
+    builder = CorpusBuilder(attacks=[], seed=42)
+    result = builder.build(_claims())
+    assert len(result.ground_truth_docs) == 2
+    assert len(result.poisoned_docs) == 0
+
+
+def test_poison_rate_zero_produces_no_poisoned():
+    attacks = [(NumericalShiftAttack(), AttackConfig(name="numerical_shift", poison_rate=0.0))]
+    result = CorpusBuilder(attacks=attacks, seed=42).build(_claims())
+    assert len(result.poisoned_docs) == 0
+
+
+def test_poison_rate_one_poisons_all():
+    attacks = [(NumericalShiftAttack(), AttackConfig(name="numerical_shift", poison_rate=1.0))]
+    result = CorpusBuilder(attacks=attacks, seed=42).build(_claims())
+    assert len(result.poisoned_docs) == 2
+
+
+def test_all_documents_combines_both():
+    attacks = [(NumericalShiftAttack(), AttackConfig(name="numerical_shift", poison_rate=1.0))]
+    result = CorpusBuilder(attacks=attacks, seed=42).build(_claims())
+    assert len(result.all_documents) == len(result.ground_truth_docs) + len(result.poisoned_docs)
+
+
+def test_poison_ratio():
+    attacks = [(NumericalShiftAttack(), AttackConfig(name="numerical_shift", poison_rate=1.0))]
+    result = CorpusBuilder(attacks=attacks, seed=42).build(_claims())
+    assert 0.0 < result.poison_ratio <= 1.0
+
+
+def test_determinism():
+    attacks = [(NumericalShiftAttack(), AttackConfig(name="numerical_shift", poison_rate=0.5))]
+    r1 = CorpusBuilder(attacks=attacks, seed=42).build(_claims())
+    r2 = CorpusBuilder(attacks=attacks, seed=42).build(_claims())
+    texts1 = [d.text for d in r1.all_documents]
+    texts2 = [d.text for d in r2.all_documents]
+    assert texts1 == texts2
+
+
+def test_multiple_attacks():
+    attacks = [
+        (NumericalShiftAttack(), AttackConfig(name="numerical_shift", poison_rate=1.0)),
+        (AttributionSwitchAttack(), AttackConfig(name="attribution_switch", poison_rate=1.0)),
+    ]
+    result = CorpusBuilder(attacks=attacks, seed=42).build(_claims())
+    assert len(result.poisoned_docs) == 4  # 2 claims × 2 attacks

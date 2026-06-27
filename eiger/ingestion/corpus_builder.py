@@ -62,6 +62,7 @@ class CorpusBuilder:
         for claim in claims:
             # Always add the ground-truth document
             gt_doc = Document(
+                doc_id=f"gt_{claim.claim_id}",
                 claim_id=claim.claim_id,
                 text=claim.original_fact,
                 doc_type="ground_truth",

@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "eiger"
@@ -70,7 +70,7 @@ ignore_missing_imports = true
 # ─── Pytest ────────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=eiger --cov-report=term-missing --cov-fail-under=80"
+addopts = "--cov=eiger --cov-report=term-missing --cov-fail-under=100"
 
 [tool.coverage.run]
 omit = ["tests/*", "scripts/*"]

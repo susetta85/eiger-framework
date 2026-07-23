@@ -19,13 +19,13 @@ EIBench taxonomy: Type 1 — Numerical Perturbation.
 
 from __future__ import annotations
 
+import random
 import re
 from typing import Any
 
 from eiger.core.interfaces import BaseAttack
-from eiger.core.models import Document, PoisonedDocument, PoisonAnnotation
-from eiger.utils.seeding import make_rng, derive_seed
-
+from eiger.core.models import Document, PoisonAnnotation, PoisonedDocument
+from eiger.utils.seeding import derive_seed, make_rng
 
 # ─── Attack class ─────────────────────────────────────────────────────────────
 
@@ -150,7 +150,7 @@ class NumericalShiftAttack(BaseAttack):
     # ─── Internal helpers ─────────────────────────────────────────────────────
 
     @staticmethod
-    def _swap_digits(num_str: str, rng: "random.Random") -> str:
+    def _swap_digits(num_str: str, rng: random.Random) -> str:
         """
         Swap a randomly selected pair of adjacent digit characters in a string.
 

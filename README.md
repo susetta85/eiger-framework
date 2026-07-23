@@ -90,7 +90,8 @@ EIBench is a six-layer pipeline. Each layer is independently extensible via a pl
 | 5 | FFR, ERS implemented; SI (NLI) falls back to 0.0 without `transformers`/`torch`; FFR's faithfulness signal is a heuristic embedding proxy, not RAGAS yet | ✅ Sprint 1 + 2 |
 | 6 | `ExperimentRunner` orchestration + `results.json` provenance | ✅ Sprint 2 |
 | 7 | Dataset registry + `JSONFixtureDataset` loader | ✅ Sprint 3 |
-| — | AVeriTeC/PolitiFact/FactCheck.org loaders, CLI entry point, real RAGAS-based faithfulness scorer, degradation curves / HTML report | 🔄 Future sprints |
+| 8 | `eiger` CLI (`run`/`list-datasets`/`list-attacks`/`list-metrics`) | ✅ Sprint 3 |
+| — | AVeriTeC/PolitiFact/FactCheck.org loaders, sparse/hybrid retrieval, OpenAI LLM backend, real RAGAS-based faithfulness scorer, degradation curves / HTML report | 🔄 Future sprints |
 
 ---
 
@@ -150,14 +151,42 @@ make test
 
 ### 6. Run a full experiment
 
-There is no `__main__.py` CLI entry point yet — `python -m eiger run ...` is
-not implemented. Today, a full experiment (corpus → ingestion → retrieval →
-generation → metrics → `results.json`) is run via the Python API:
-
 ```bash
 # Pull the LLM first (one-time, ~5GB)
 docker exec eiger-ollama ollama pull llama3.1:8b
 ```
+
+**Via the CLI** (`eiger` console script, or `python -m eiger`):
+
+```bash
+eiger list-datasets     # json_fixture
+eiger list-attacks      # numerical_shift, attribution_switch, date_manipulation, causal_manipulation
+eiger list-metrics      # ffr, ers, source_integrity
+
+eiger run experiments/config.yaml
+```
+
+Example `experiments/config.yaml`:
+
+```yaml
+dataset:
+  name: json_fixture
+retriever:
+  collection_name: eiger_baseline_v1
+llm:
+  model: llama3.1:8b
+metrics: [ffr, ers, source_integrity]
+output_dir: results/baseline_v1
+```
+
+Only `retriever.type: dense`, `retriever.vector_store: qdrant`, and
+`llm.backend: ollama` are implemented — the CLI raises a clear
+`ConfigurationError` for any other value (e.g. `sparse`/`hybrid` retrieval
+or an `openai` backend, which the config schema already accepts for
+forward-compatibility but nothing implements yet).
+
+**Via the Python API** (equivalent to the above, useful in notebooks or when
+you need direct control over component construction):
 
 ```python
 from eiger.experiments import ExperimentRunner
@@ -213,7 +242,7 @@ eiger-framework/
 │   └── utils/                # Logging, seeding, hashing
 │
 ├── tests/
-│   ├── unit/                 # Fast, no external services (297 tests, 100% coverage)
+│   ├── unit/                 # Fast, no external services (346 tests, 100% coverage)
 │   └── integration/          # Requires docker compose up
 │
 ├── experiments/              # YAML experiment definitions

@@ -106,7 +106,7 @@ Persists the full `ExperimentResult` to disk, computes aggregate statistics, and
 | Result serialization | `ExperimentResult.to_json()` writes results to `output_dir/results.json` |
 | Provenance | Git commit hash, timestamp, config hash, environment dict |
 | Reproducibility | `config_hash` is a SHA-256 fingerprint of the full config |
-| Status | ✅ Sprint 2 — `ExperimentRunner` orchestrates the full pipeline and writes `results.json`; no CLI entry point or analytics dashboard yet |
+| Status | ✅ Sprint 2 — `ExperimentRunner` orchestrates the full pipeline and writes `results.json`. ✅ Sprint 3 — `eiger` CLI (`eiger/__main__.py`) resolves an `ExperimentConfig` YAML file into concrete components and drives it end-to-end; no analytics dashboard yet |
 
 ---
 

@@ -17,7 +17,31 @@ What these tests do NOT cover:
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
+import pytest
+import structlog
+
 from eiger.utils.logging import configure_logging, get_logger
+
+
+@pytest.fixture(autouse=True)
+def _reset_structlog_after_test() -> Iterator[None]:
+    """
+    Reset structlog's global configuration after every test in this module.
+
+    configure_logging() calls structlog.configure(), which mutates
+    process-wide state with no per-call scoping. Without resetting it here,
+    a single call to configure_logging() would permanently change logging
+    behavior for every test that runs afterward in the same pytest process
+    (test collection order is alphabetical, so any module sorted after
+    "test_logging" would be affected) — including modules that invoke real,
+    unpatched loggers, such as CorpusBuilder, IngestionPipeline, and
+    DenseRetriever when exercised indirectly through
+    ExperimentRunner.run() in test_runner.py.
+    """
+    yield
+    structlog.reset_defaults()
 
 
 class TestConfigureLogging:

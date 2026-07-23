@@ -303,3 +303,37 @@ class TestMain:
         exit_code = cli.main(["run", str(missing)])
         assert exit_code == 1
         assert "Error:" in capsys.readouterr().err
+
+    def test_main_converts_import_error_to_exit_code_one(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """
+        SentenceTransformerEmbedder/QdrantVectorStore/OllamaLLM all raise a
+        plain ImportError (not an EigerError) when their lazily-loaded
+        optional dependency is missing. main() must convert that to the
+        same clean stderr message + exit code 1 as an EigerError, rather
+        than letting it surface as a raw traceback (found by actually
+        running `eiger run` against a real experiments/*.yaml config).
+        """
+        config_path = tmp_path / "config.yaml"
+        _write_yaml(config_path, _minimal_config_yaml())
+
+        with (
+            patch.object(cli, "_build_dataset") as mock_build_dataset,
+            patch.object(cli, "_build_runner") as mock_build_runner,
+        ):
+            mock_build_dataset.return_value.load.return_value = [
+                Claim(
+                    claim_id="C1", original_fact="fact", context_query="query?",
+                    source_dataset="json_fixture",
+                )
+            ]
+            mock_build_runner.return_value.run.side_effect = ImportError(
+                "sentence-transformers is required for SentenceTransformerEmbedder. "
+                "Install it with: pip install sentence-transformers"
+            )
+
+            exit_code = cli.main(["run", str(config_path)])
+
+        assert exit_code == 1
+        assert "sentence-transformers is required" in capsys.readouterr().err

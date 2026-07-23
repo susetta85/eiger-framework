@@ -29,7 +29,7 @@ Results are written to the `output_dir` specified in the config file
 | `experiment_id` | string | Yes | — | Unique run identifier. Must be distinct across all results. Used as the results directory name. |
 | `description` | string | No | `""` | Human-readable description of the experiment. |
 | `seed` | integer | Yes | `42` | Global random seed. Controls attack sampling, dataset shuffling, and all stochastic components. |
-| `dataset.name` | string | Yes | — | Dataset identifier: `averitec`, `politifact`, or `json_fixture`. |
+| `dataset.name` | string | Yes | — | Dataset identifier. **Only `json_fixture` is implemented** — `averitec`/`politifact` are schema-valid but registered nowhere yet (see `docs/DATASETS.md`); using them raises `DatasetNotFoundError`. |
 | `dataset.split` | string | No | `"test"` | Dataset split to load. |
 | `dataset.max_claims` | integer or null | No | `null` | Cap on number of claims to process. `null` means all claims. |
 | `dataset.path` | string or null | No | `null` | Local file path override (used by `json_fixture`). |
@@ -37,12 +37,12 @@ Results are written to the `output_dir` specified in the config file
 | `attacks[].name` | string | Yes | — | Attack identifier. Must be registered in the attack registry. |
 | `attacks[].poison_rate` | float | Yes | — | Fraction of corpus documents to poison, in [0.0, 1.0]. |
 | `attacks[].params` | dict | No | `{}` | Attack-specific hyperparameters. See each attack's documentation. |
-| `retriever.type` | string | No | `"dense"` | Retrieval strategy: `dense`, `sparse`, or `hybrid`. |
+| `retriever.type` | string | No | `"dense"` | Retrieval strategy. **Only `dense` is implemented** — `sparse`/`hybrid` are schema-valid but unimplemented; the CLI's `_build_runner` raises `ConfigurationError` if used. |
 | `retriever.embedder` | string | No | `"sentence-transformers/all-MiniLM-L6-v2"` | HuggingFace model ID for embedding (dense and hybrid only). |
-| `retriever.vector_store` | string | No | `"qdrant"` | Vector store backend: `qdrant`, `chroma`, or `faiss`. |
+| `retriever.vector_store` | string | No | `"qdrant"` | Vector store backend. **Only `qdrant` is implemented** — `chroma`/`faiss` are schema-valid but unimplemented; same `ConfigurationError` behavior as above. |
 | `retriever.top_k` | integer | No | `5` | Number of documents to retrieve per query. |
 | `retriever.collection_name` | string | No | `"eiger_corpus"` | Named collection in the vector store. Must be unique per experiment. |
-| `llm.backend` | string | No | `"ollama"` | LLM backend: `ollama` or `openai`. |
+| `llm.backend` | string | No | `"ollama"` | LLM backend. **Only `ollama` is implemented** — `openai` is schema-valid but unimplemented; same `ConfigurationError` behavior as above. |
 | `llm.model` | string | No | `"llama3.1:8b"` | Model name as recognized by the backend. |
 | `llm.temperature` | float | No | `0.0` | Sampling temperature. Set to `0.0` for reproducible results. |
 | `llm.max_tokens` | integer | No | `512` | Maximum tokens in the generated response. |
@@ -89,13 +89,15 @@ reversal per document).
 
 ## Output Structure
 
-Each run produces two files in `results/<experiment_id>/`:
+Each run produces one file in `output_dir` (e.g. `results/<experiment_id>/`):
 
 ```
 results/<experiment_id>/
     results.json    # Full ExperimentResult: all EvaluationRecords,
-                    # aggregate metrics, timestamp, git_commit, environment
-    config.json     # Resolved ExperimentConfig snapshot
+                    # aggregate metrics, timestamp, git_commit, environment,
+                    # AND the fully-resolved ExperimentConfig itself (the
+                    # `config` field) — there is no separate config.json;
+                    # the config snapshot lives inside results.json.
 ```
 
 **Provenance and reproducibility.** Every `results.json` embeds a `config_hash`

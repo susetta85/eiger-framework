@@ -302,8 +302,23 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """
     CLI entry point: parse arguments, dispatch to the selected subcommand,
-    and translate any EigerError into a clean stderr message + exit code 1
-    rather than a raw traceback.
+    and translate expected failures into a clean stderr message + exit
+    code 1 rather than a raw traceback.
+
+    Two exception families are caught here, both by design elsewhere in
+    the framework:
+      - EigerError (and subclasses): the framework's own error hierarchy
+        (ConfigurationError, DatasetNotFoundError, IngestionError, etc.).
+      - ImportError: SentenceTransformerEmbedder, QdrantVectorStore, and
+        OllamaLLM all lazily import their heavy/optional dependency on
+        first real use and raise a plain ImportError with an actionable
+        "pip install ..." message if it is missing (see each class's own
+        docstring) — verified directly by running `eiger run` against a
+        real experiments/*.yaml file without sentence-transformers
+        installed. That message is exactly as user-actionable as an
+        EigerError's, so it is not left to surface as a raw traceback.
+      Anything else (a real bug) is intentionally left to propagate as a
+      full traceback rather than being swallowed here.
 
     Args:
         argv: Argument list to parse (defaults to sys.argv[1:] via argparse
@@ -311,8 +326,8 @@ def main(argv: list[str] | None = None) -> int:
               explicit argv without touching sys.argv).
 
     Returns:
-        Process exit code: 0 on success, 1 on any EigerError or an empty
-        dataset.
+        Process exit code: 0 on success, 1 on any EigerError/ImportError or
+        an empty dataset.
     """
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -326,7 +341,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         return dispatch(args)
-    except EigerError as exc:
+    except (EigerError, ImportError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 

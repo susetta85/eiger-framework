@@ -135,3 +135,15 @@ The resulting `claims` list is passed directly to `CorpusBuilder.build()` /
 See `docs/DATASETS.md` for the full specs (expected raw formats, download
 instructions) of the still-planned AVeriTeC, PolitiFact, and FactCheck.org
 loaders.
+
+---
+
+## Growing the JSON fixture: claim intake from non-technical contributors
+
+`scripts/import_claims_xlsx.py` converts a filled-in spreadsheet
+(`eiger_claims_template.xlsx`) into an **unverified candidate** JSON file
+— never directly into `eibench_raw_claims.json`. See `scripts/README.md`
+for the full collect → convert → verify → promote workflow, and its
+documented limitation (promotion currently drops the candidate's
+`source`/`domain`/`notes`/`verified` fields, since `JSONFixtureDataset`
+only preserves `adversarial_variants` in `Claim.metadata` today).

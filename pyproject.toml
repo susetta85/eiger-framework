@@ -49,6 +49,12 @@ dev = [
     "bandit>=1.7.0",
     "pip-audit>=2.7.0",
 ]
+# Only needed for scripts/import_claims_xlsx.py (converting a human-filled
+# claim-collection spreadsheet into a JSON claim candidate file). Not a
+# core runtime dependency: running experiments never touches .xlsx files.
+data-import = [
+    "openpyxl>=3.1.0,<4.0",
+]
 
 [project.scripts]
 eiger = "eiger.__main__:main"

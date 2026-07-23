@@ -12,18 +12,29 @@ This package orchestrates the three-phase corpus preparation pipeline:
       per claim, and applies configured adversarial attacks at the
       specified poison_rate to generate PoisonedDocument objects.
 
-  Phase 3 — Vector store ingestion:
-      A BaseVectorStore implementation receives the combined corpus
-      (ground-truth + poisoned documents), embeds each document, and
-      upserts the vectors for subsequent retrieval.
+  Phase 3 — Vector store ingestion (IngestionPipeline):
+      Takes the combined corpus (ground-truth + poisoned documents) from
+      CorpusBuilderResult, embeds each document via a BaseEmbedder, and
+      upserts the vectors into a BaseVectorStore collection for
+      subsequent retrieval by DenseRetriever.
 
 Public API:
-  from eiger.ingestion import CorpusBuilder, CorpusBuilderResult
+  from eiger.ingestion import (
+      CorpusBuilder, CorpusBuilderResult,
+      IngestionPipeline, IngestionResult,
+  )
 """
 
-# The CorpusBuilder and its result dataclass are the primary public API
-# of this package. They are re-exported here so callers don't need to
-# know the internal module layout.
+# CorpusBuilder/CorpusBuilderResult (Phase 2) and IngestionPipeline/
+# IngestionResult (Phase 3) are the primary public API of this package.
+# They are re-exported here so callers don't need to know the internal
+# module layout.
 from eiger.ingestion.corpus_builder import CorpusBuilder, CorpusBuilderResult
+from eiger.ingestion.pipeline import IngestionPipeline, IngestionResult
 
-__all__ = ["CorpusBuilder", "CorpusBuilderResult"]
+__all__ = [
+    "CorpusBuilder",
+    "CorpusBuilderResult",
+    "IngestionPipeline",
+    "IngestionResult",
+]

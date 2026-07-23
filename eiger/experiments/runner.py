@@ -55,14 +55,22 @@ Design decisions
   here**: ``FFRMetric`` reads ``EvaluationRecord.faithfulness_score`` and
   ``.factual_correctness_score``, which are read from
   ``record.metrics["ragas_faithfulness"]`` / ``["ragas_answer_correctness"]``.
-  No RAGAS integration exists yet in EIGER. ExperimentRunner exposes an
-  optional ``faithfulness_scorer`` hook — a callable that receives
+  No real RAGAS (LLM-judge) integration exists yet in EIGER — RAGAS's
+  faithfulness/answer_correctness metrics require an LLM judge wrapped via
+  ``LangchainLLMWrapper``, a substantial new dependency with documented
+  reliability issues when Ollama is used as the judge. ExperimentRunner
+  instead exposes a ``faithfulness_scorer`` hook — a callable that receives
   ``(claim, generation)`` and returns a dict to merge into the record's
-  metrics — so a future RAGAS wrapper can be plugged in without changing
-  this class. If "ffr" is configured without a scorer, a warning is logged
-  once per run: the resulting FFR values would silently be 0.0 for every
-  record (faithfulness/correctness default to 0.0), which is NOT a valid
-  experimental measurement and must not be reported as one.
+  metrics — so any scorer can be plugged in without changing this class.
+  ``eiger.metrics.EmbeddingFaithfulnessScorer`` is a ready-to-use, LLM-judge-
+  free cosine-similarity *proxy* for this signal (see its module docstring
+  for exactly what it does and does not capture — it must be reported as
+  a proxy, not as RAGAS, in any published result). A real RAGAS-based
+  scorer remains future work and can replace it without touching
+  ExperimentRunner. If "ffr" is configured without any scorer at all, a
+  warning is logged once per run: the resulting FFR values would silently
+  be 0.0 for every record (faithfulness/correctness default to 0.0), which
+  is NOT a valid experimental measurement and must not be reported as one.
 - **Fail loud, no per-claim error swallowing**: a single claim's retrieval
   or generation failure aborts the whole run (RetrievalError/GenerationError
   propagate unchanged). Silently skipping failed claims would silently bias

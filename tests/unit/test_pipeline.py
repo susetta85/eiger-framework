@@ -25,6 +25,7 @@ What these tests do NOT cover:
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -35,11 +36,10 @@ from eiger.core.models import Document, PoisonedDocument
 from eiger.ingestion.corpus_builder import CorpusBuilderResult
 from eiger.ingestion.pipeline import IngestionPipeline, IngestionResult
 
-
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 @pytest.fixture(autouse=True)
-def _silence_logger():
+def _silence_logger() -> Iterator[None]:
     """
     Patch the module-level structlog logger for every test in this file.
 

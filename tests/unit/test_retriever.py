@@ -22,6 +22,7 @@ What these tests do NOT cover:
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -32,11 +33,10 @@ from eiger.core.interfaces import BaseEmbedder, BaseVectorStore
 from eiger.core.models import RetrievalResult
 from eiger.retrieval.retriever import DenseRetriever
 
-
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 @pytest.fixture(autouse=True)
-def _silence_logger():
+def _silence_logger() -> Iterator[None]:
     """
     Patch the module-level structlog logger for every test in this file.
 
@@ -52,7 +52,12 @@ def _silence_logger():
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
-def _make_raw_hit(doc_id: str, score: float, claim_id: str = "C1", text: str = "some text") -> dict[str, Any]:
+def _make_raw_hit(
+    doc_id: str,
+    score: float,
+    claim_id: str = "C1",
+    text: str = "some text",
+) -> dict[str, Any]:
     """Build a raw hit dict in the shape returned by BaseVectorStore.search()."""
     return {
         "doc_id": doc_id,
@@ -77,7 +82,9 @@ def _make_retriever(
         (retriever, mock_embedder, mock_vector_store)
     """
     mock_embedder = MagicMock(spec=BaseEmbedder)
-    mock_embedder.encode.return_value = [query_vector if query_vector is not None else [0.1, 0.2, 0.3]]
+    default_vector = [0.1, 0.2, 0.3]
+    resolved_vector = query_vector if query_vector is not None else default_vector
+    mock_embedder.encode.return_value = [resolved_vector]
 
     mock_vector_store = MagicMock(spec=BaseVectorStore)
     mock_vector_store.search.return_value = search_results if search_results is not None else []

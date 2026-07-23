@@ -190,8 +190,8 @@ class OllamaLLM(BaseLLM):
 
         Raises:
             GenerationError: If the HTTP request fails, the response is not
-                              valid JSON, or the response is missing the
-                              "response" field.
+                              valid JSON, the response is missing the
+                              "response" field, or that field is not a string.
         """
         client = self._get_client()
 
@@ -239,6 +239,15 @@ class OllamaLLM(BaseLLM):
             raise GenerationError(
                 f"Ollama response for model '{self.model_name}' is missing "
                 f"the 'response' field: {data!r}"
+            )
+        if not isinstance(answer, str):
+            # Guards against a malformed/future Ollama response shape (e.g. a
+            # server returning a number or nested object) and also narrows
+            # the type for mypy, which otherwise sees `answer` as Any since
+            # response.json() is untyped.
+            raise GenerationError(
+                f"Ollama response for model '{self.model_name}' has a "
+                f"non-string 'response' field ({type(answer).__name__}): {data!r}"
             )
 
         log.info("ollama.generated", model=self.model_name, answer_len=len(answer))

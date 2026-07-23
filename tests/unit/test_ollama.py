@@ -33,7 +33,6 @@ import pytest
 from eiger.core.exceptions import GenerationError
 from eiger.llm.ollama import DEFAULT_MODEL, RAG_SYSTEM_INSTRUCTION, OllamaLLM
 
-
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _make_llm_with_mock_client() -> tuple[OllamaLLM, MagicMock]:
@@ -214,17 +213,17 @@ class TestGenerate:
     def test_raises_generation_error_on_http_failure(self) -> None:
         llm, mock_client = _make_llm_with_mock_client()
         mock_client.post.side_effect = RuntimeError("connection refused")
-        with patch("eiger.llm.ollama.log"):
-            with pytest.raises(GenerationError, match="Ollama generation failed"):
-                llm.generate("hello")
+        with patch("eiger.llm.ollama.log"), pytest.raises(
+            GenerationError, match="Ollama generation failed"
+        ):
+            llm.generate("hello")
 
     def test_http_failure_chains_original_exception(self) -> None:
         llm, mock_client = _make_llm_with_mock_client()
         original = RuntimeError("connection refused")
         mock_client.post.side_effect = original
-        with patch("eiger.llm.ollama.log"):
-            with pytest.raises(GenerationError) as exc_info:
-                llm.generate("hello")
+        with patch("eiger.llm.ollama.log"), pytest.raises(GenerationError) as exc_info:
+            llm.generate("hello")
         assert exc_info.value.__cause__ is original
 
     def test_raises_generation_error_on_bad_status(self) -> None:
@@ -232,9 +231,10 @@ class TestGenerate:
         mock_client.post.return_value = _make_response(
             {"response": "unused"}, raise_for_status_error=RuntimeError("500 error")
         )
-        with patch("eiger.llm.ollama.log"):
-            with pytest.raises(GenerationError, match="Ollama generation failed"):
-                llm.generate("hello")
+        with patch("eiger.llm.ollama.log"), pytest.raises(
+            GenerationError, match="Ollama generation failed"
+        ):
+            llm.generate("hello")
 
     def test_raises_generation_error_on_non_json_response(self) -> None:
         llm, mock_client = _make_llm_with_mock_client()
@@ -242,16 +242,30 @@ class TestGenerate:
         bad_response.raise_for_status.return_value = None
         bad_response.json.side_effect = ValueError("not json")
         mock_client.post.return_value = bad_response
-        with patch("eiger.llm.ollama.log"):
-            with pytest.raises(GenerationError, match="non-JSON response"):
-                llm.generate("hello")
+        with patch("eiger.llm.ollama.log"), pytest.raises(
+            GenerationError, match="non-JSON response"
+        ):
+            llm.generate("hello")
 
     def test_raises_generation_error_when_response_field_missing(self) -> None:
         llm, mock_client = _make_llm_with_mock_client()
         mock_client.post.return_value = _make_response({"unexpected": "shape"})
-        with patch("eiger.llm.ollama.log"):
-            with pytest.raises(GenerationError, match="missing the 'response' field"):
-                llm.generate("hello")
+        with patch("eiger.llm.ollama.log"), pytest.raises(
+            GenerationError, match="missing the 'response' field"
+        ):
+            llm.generate("hello")
+
+    def test_raises_generation_error_when_response_field_is_not_a_string(self) -> None:
+        """
+        A non-string "response" field (e.g. a number or nested object) must be
+        rejected explicitly rather than silently returned to the caller.
+        """
+        llm, mock_client = _make_llm_with_mock_client()
+        mock_client.post.return_value = _make_response({"response": 42})
+        with patch("eiger.llm.ollama.log"), pytest.raises(
+            GenerationError, match="non-string 'response' field"
+        ):
+            llm.generate("hello")
 
 
 # ─── build_rag_prompt() ────────────────────────────────────────────────────────

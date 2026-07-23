@@ -28,7 +28,7 @@ pytest tests/ --cov=eiger --cov-report=term-missing
 
 | Suite       | Location            | Count | Speed  | External Services |
 |-------------|---------------------|-------|--------|--------------------|
-| Unit        | `tests/unit/`       | 297   | Fast   | None               |
+| Unit        | `tests/unit/`       | 325   | Fast   | None               |
 | Integration | `tests/integration/`| 3     | Fast–Slow | None required (see below) |
 
 Integration tests are split into two files with different infrastructure
@@ -131,6 +131,19 @@ the same pytest process (fixed for `test_logging.py` itself via
 `structlog.reset_defaults()` in an autouse teardown fixture, to prevent that
 module's tests from corrupting global logging state for every
 alphabetically-later test file).
+
+---
+
+## Sprint 3 unit test files
+
+Sprint 3 added the dataset layer:
+
+| File | Tests | Covers |
+|---|---|---|
+| `test_datasets.py` | 28 | Dataset registry (`register_dataset`/`get_dataset`/`list_datasets`, `DatasetNotFoundError`) and `JSONFixtureDataset`: field mapping, `max_claims`/`split` handling, `download()` no-op, `content_hash` before/after load, error paths (missing file, invalid JSON, non-list top-level, missing required field) |
+
+Follows the same module-level `log`-patching convention described above
+(patches `eiger.datasets.json_fixture.log`).
 
 ---
 

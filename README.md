@@ -89,7 +89,8 @@ EIBench is a six-layer pipeline. Each layer is independently extensible via a pl
 | 4 | Llama 3.1 / Mistral via Ollama | ✅ Sprint 2 |
 | 5 | FFR, ERS implemented; SI (NLI) falls back to 0.0 without `transformers`/`torch`; FFR's faithfulness signal is a heuristic embedding proxy, not RAGAS yet | ✅ Sprint 1 + 2 |
 | 6 | `ExperimentRunner` orchestration + `results.json` provenance | ✅ Sprint 2 |
-| — | Dataset loaders (AVeriTeC, PolitiFact, …), CLI entry point, real RAGAS-based faithfulness scorer, degradation curves / HTML report | 🔄 Future sprints |
+| 7 | Dataset registry + `JSONFixtureDataset` loader | ✅ Sprint 3 |
+| — | AVeriTeC/PolitiFact/FactCheck.org loaders, CLI entry point, real RAGAS-based faithfulness scorer, degradation curves / HTML report | 🔄 Future sprints |
 
 ---
 

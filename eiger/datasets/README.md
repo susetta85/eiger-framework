@@ -1,139 +1,137 @@
 # eiger.datasets
 
-Status: planned for Sprint 2. This package does not exist yet. The documentation below
-describes the intended design so that contributors can work to the same interface
-contract.
-
-For current experiments, claims are loaded from the fixture file
-`eibench_raw_claims.json` directly. See `docs/DATASETS.md` for instructions.
+Status: **Sprint 3 (in progress)** — the registry and one concrete loader,
+`JSONFixtureDataset`, are implemented and tested. AVeriTeC, PolitiFact, and
+FactCheck.org loaders are still planned (see `docs/DATASETS.md` for their
+full specs and the roadmap).
 
 ---
 
-## Planned contents
+## Contents
 
-| Module           | Class                | Source                         |
-|------------------|----------------------|--------------------------------|
-| `base.py`        | `BaseDataset`        | Abstract base class            |
-| `json_fixture.py`| `JSONFixtureDataset` | `eibench_raw_claims.json`      |
-| `averitec.py`    | `AVeriTeCDataset`    | HuggingFace `datasets` library |
-| `politifact.py`  | `PolitiFactDataset`  | PolitiFact API / scraper       |
-| `factcheck.py`   | `FactCheckDataset`   | FactCheck.org loader           |
+| Module          | Class                | Source                         | Status      |
+|------------------|----------------------|--------------------------------|-------------|
+| `registry.py`    | —                    | `register_dataset`/`get_dataset`/`list_datasets` | Implemented |
+| `json_fixture.py`| `JSONFixtureDataset` | `eibench_raw_claims.json`      | Implemented |
+| `averitec.py`    | `AVeriTeCDataset`    | HuggingFace `datasets` library | Planned     |
+| `politifact.py`  | `PolitiFactDataset`  | LIAR TSV                       | Planned     |
+| `factcheck.py`   | `FactCheckDataset`   | CheckThat! corpus              | Planned     |
+
+`BaseDataset` itself is **not** re-declared here — it already lives in
+`eiger/core/interfaces.py`, alongside every other core abstract interface
+(`BaseAttack`, `BaseMetric`, `BaseEmbedder`, etc.).
 
 ---
 
 ## BaseDataset interface contract
 
-All dataset classes will inherit from `BaseDataset` and implement the following
-abstract interface:
-
 ```python
-from abc import ABC, abstractmethod
-from eiger.models import Claim
+from eiger.core.interfaces import BaseDataset
+from eiger.core.models import Claim
 
 class BaseDataset(ABC):
+    name: str
+    description: str
 
     @abstractmethod
-    def load(self, split: str = "train", max_claims: int | None = None) -> list[Claim]:
-        """Load claims from the dataset.
-
-        Args:
-            split:      Dataset split — "train", "dev", or "test".
-            max_claims: If set, truncates the returned list to this length.
-
-        Returns:
-            A list of Claim objects in the order defined by the dataset.
-        """
-        ...
+    def load(self, split: str = "test", max_claims: int | None = None) -> list[Claim]:
+        """Load and return claims from the dataset."""
 
     @abstractmethod
     def download(self, target_dir: str) -> None:
-        """Download or cache the raw dataset files to target_dir."""
-        ...
+        """Download the raw dataset to target_dir if not already present."""
 
     @property
     @abstractmethod
     def content_hash(self) -> str:
-        """SHA-256 hex digest of the raw source files.
-
-        Used to detect dataset version changes between experiment runs.
-        """
-        ...
+        """SHA-256 fingerprint of the loaded content, for provenance tracking."""
 ```
 
-The `load` method must return `Claim` objects as defined in `eiger.models`. Callers
-must not assume any ordering unless the specific dataset class documents one.
+## Dataset registry
+
+Mirrors `eiger.attacks.registry` / `eiger.metrics.registry` exactly:
+
+```python
+from eiger.datasets import get_dataset, list_datasets, register_dataset
+
+list_datasets()          # -> ["json_fixture"]
+dataset = get_dataset("json_fixture")  # fresh JSONFixtureDataset() instance
+```
+
+Built-in datasets are auto-registered on `import eiger.datasets`. Requesting
+an unregistered name raises `DatasetNotFoundError` (from
+`eiger.core.exceptions`), listing the currently available names.
 
 ---
 
-## Expected JSON schema
+## JSONFixtureDataset
 
-All datasets, regardless of source, map to the same `Claim` model fields. The canonical
-JSON representation used by `JSONFixtureDataset` and expected by importers is:
+Loads `Claim` objects from the bundled `eibench_raw_claims.json` fixture,
+committed at the repository root. No network access, no external
+dependencies, no download step — `download()` is a documented no-op.
+
+Real (correct) JSON schema, matching the actual `Claim` model
+(`eiger/core/models.py`):
 
 ```json
-{
-  "id": "claim_001",
-  "text": "The Eiffel Tower is 330 metres tall.",
-  "label": "false",
-  "evidence": [
-    {
-      "source": "wikipedia",
-      "text": "The Eiffel Tower stands 300 metres tall."
+[
+  {
+    "claim_id": "EIB_CLAIM_001",
+    "original_fact": "Il report ufficiale dichiara che l'inflazione core nel 2024 è stabile al 2.1%.",
+    "context_query": "Quali sono i dati ufficiali sull'inflazione core nel 2024?",
+    "adversarial_variants": {
+      "numerical_shift": "... variant text ...",
+      "causal_manipulation": "... variant text ..."
     }
-  ],
-  "metadata": {
-    "source_dataset": "eibench",
-    "date": "2024-01-15"
   }
-}
+]
 ```
 
 Field mapping to `Claim`:
 
-| JSON field          | Claim field     | Required |
-|---------------------|-----------------|----------|
-| `id`                | `id`            | Yes      |
-| `text`              | `text`          | Yes      |
-| `label`             | `label`         | Yes      |
-| `evidence`          | `evidence`      | No       |
-| `metadata`          | `metadata`      | No       |
+| JSON field              | Claim field                          | Required |
+|--------------------------|---------------------------------------|----------|
+| `claim_id`               | `claim_id`                            | Yes      |
+| `original_fact`          | `original_fact`                       | Yes      |
+| `context_query`          | `context_query`                       | Yes      |
+| (fixed value)            | `source_dataset` = `"json_fixture"`   | —        |
+| `adversarial_variants`   | `metadata["adversarial_variants"]`    | No       |
+
+`adversarial_variants` is informational/example provenance only — it is
+**not** consumed by `CorpusBuilder`, which generates its own poisoned
+documents at ingestion time via the attack registry (`get_attack(...)`).
+
+### Usage
+
+```python
+from eiger.datasets import JSONFixtureDataset
+
+dataset = JSONFixtureDataset()          # defaults to the repo-root fixture
+claims = dataset.load(max_claims=10)    # split is accepted but ignored
+print(dataset.content_hash)             # populated only after load()
+```
+
+`path` can be overridden to point at a different fixture file (e.g. in
+tests), matching `DatasetConfig.path`'s "local path override" semantics:
+
+```python
+dataset = JSONFixtureDataset(path="/tmp/custom_claims.json")
+```
+
+The resulting `claims` list is passed directly to `CorpusBuilder.build()` /
+`ExperimentRunner.run()`.
 
 ---
 
-## Placeholder usage example
+## Adding a new dataset loader
 
-The following example shows the intended usage once Sprint 2 is complete. It will not
-work until the package is implemented.
+1. Implement a `BaseDataset` subclass in a new module under `eiger/datasets/`
+   (see `json_fixture.py` for the reference implementation).
+2. Register it in `eiger/datasets/__init__.py`:
+   `register_dataset(YourDatasetClass)`, and add it to `__all__`.
+3. Reference it by name in a `DatasetConfig.name` (YAML or code).
+4. Verify with `list_datasets()` and `get_dataset(name)`.
 
-```python
-# Sprint 2 — not yet available
-from eiger.datasets.averitec import AVeriTeCDataset
-
-dataset = AVeriTeCDataset()
-dataset.download(target_dir="data/averitec/")
-claims = dataset.load(split="dev", max_claims=500)
-
-print(f"Loaded {len(claims)} claims")
-print(f"Dataset hash: {dataset.content_hash}")
-```
-
-The resulting `claims` list is passed directly to `CorpusBuilder.build()`.
-
----
-
-## Current workaround
-
-Until Sprint 2 is delivered, load claims from the bundled fixture:
-
-```python
-import json
-from eiger.models import Claim
-
-with open("eibench_raw_claims.json") as f:
-    raw = json.load(f)
-
-claims = [Claim(**item) for item in raw]
-```
-
-See `docs/DATASETS.md` for the fixture file location, format details, and instructions
-for adding new fixture claims.
+See `docs/DATASETS.md` for the full specs (expected raw formats, download
+instructions) of the still-planned AVeriTeC, PolitiFact, and FactCheck.org
+loaders.

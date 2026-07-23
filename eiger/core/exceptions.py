@@ -71,6 +71,27 @@ class MetricNotFoundError(EigerError):
         )
 
 
+class DatasetNotFoundError(EigerError):
+    """
+    Raised when a dataset name is not found in the dataset registry.
+
+    Mirrors AttackNotFoundError/MetricNotFoundError in structure for
+    consistency. Typically triggered when a YAML experiment config's
+    DatasetConfig.name references a dataset that has not been registered
+    via register_dataset().
+
+    Args:
+        name:      The requested dataset identifier.
+        available: List of currently registered dataset names.
+    """
+
+    def __init__(self, name: str, available: list[str]) -> None:
+        # Same pattern as AttackNotFoundError/MetricNotFoundError.
+        super().__init__(
+            f"Dataset '{name}' not found. Available: {available}"
+        )
+
+
 # ─── Lifecycle errors ─────────────────────────────────────────────────────────
 
 class ConfigurationError(EigerError):

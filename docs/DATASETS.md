@@ -198,13 +198,13 @@ claims = dataset.load(split="test", max_claims=50)
 
 ### Description
 
-The JSON fixture is a lightweight, self-contained dataset bundled with the EIGER repository. It is the only dataset with active (Sprint 1) status and is used for:
+The JSON fixture is a lightweight, self-contained dataset bundled with the EIGER repository. It is the only dataset with active status, and as of Sprint 3 it is loaded through a real `JSONFixtureDataset` (`BaseDataset`) implementation registered in `eiger.datasets`, not through ad-hoc `json.load()` calls. It is used for:
 
 - Unit and integration tests (deterministic, no network access required)
 - Development and debugging of the poisoning engine
 - CI pipeline validation
 
-The fixture currently contains one claim in Italian, demonstrating the multi-lingual capability of the framework and reflecting the research team's initial prototype. It will be expanded to English AVeriTeC claims in Sprint 2.
+The fixture currently contains one claim in Italian, demonstrating the multi-lingual capability of the framework and reflecting the research team's initial prototype. It will be expanded to English AVeriTeC claims once the `AVeriTeCDataset` loader (still planned — see Section 10) is implemented.
 
 ### Location
 
@@ -428,10 +428,12 @@ print(f"Content hash: {ds.content_hash}")
 
 | Dataset | Sprint | Milestone |
 |---|---|---|
-| JSON Fixture (1 claim, Italian) | Sprint 1 | Active. Used for all unit and integration tests. |
-| AVeriTeC (English, ~4,500 claims) | Sprint 2 | Primary research corpus. Loader implementation + DVC tracking. |
-| PolitiFact via LIAR (English, ~12,800 claims) | Sprint 3 | Political domain expansion. |
-| FactCheck.org via CheckThat! (English, ~3,000 claims) | Sprint 4 | Multi-domain expansion. |
-| Multi-lingual extension (Italian, French, German) | Sprint 5 | Cross-lingual epistemic robustness. |
+| JSON Fixture (1 claim, Italian) | Sprint 1 | **Implemented.** `JSONFixtureDataset` + the `eiger.datasets` registry. Used for all unit and integration tests. |
+| AVeriTeC (English, ~4,500 claims) | Sprint 2 | Planned. Primary research corpus. Loader implementation + DVC tracking. |
+| PolitiFact via LIAR (English, ~12,800 claims) | Sprint 3 | Planned. Political domain expansion. |
+| FactCheck.org via CheckThat! (English, ~3,000 claims) | Sprint 4 | Planned. Multi-domain expansion. |
+| Multi-lingual extension (Italian, French, German) | Sprint 5 | Planned. Cross-lingual epistemic robustness. |
+
+Note: the "Sprint" column above is this document's own dataset-specific roadmap numbering, established during Sprint 1 planning, and does not necessarily align 1:1 with the project's actual sprint cadence (e.g. the retrieval/generation/orchestration layer built in the project's own "Sprint 2" did not touch datasets at all). The `eiger.datasets` registry and `JSONFixtureDataset` described in Sections 6-7 were implemented during the project's Sprint 3.
 
 The JSON fixture will remain in the repository indefinitely as the canonical fast-test dataset. All CI pipelines run against the fixture only; full-scale experiments against AVeriTeC and PolitiFact are run on the research compute cluster and results are archived under `experiments/`.

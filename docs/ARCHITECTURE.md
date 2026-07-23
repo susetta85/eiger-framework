@@ -1,6 +1,6 @@
 # EIGER Framework — Architecture Reference
 
-> Version: 0.1.0 | Sprint 1 baseline  
+> Version: 0.1.0 | Sprint 2 baseline
 > Package: `eiger` | Python >= 3.10
 
 ---
@@ -48,7 +48,7 @@ Transforms raw `Claim` objects into a vector corpus. For each claim, a ground-tr
 | Document creation | Wraps each claim's text in a `Document` (doc_type=`ground_truth`) |
 | Embedding | Calls `BaseEmbedder.encode()` on batch document texts |
 | Indexing | Calls `BaseVectorStore.upsert()` to write vectors |
-| Status | Sprint 1 — interface complete; Qdrant implementation in progress |
+| Status | ✅ Implemented — `CorpusBuilder` (Sprint 1) + `IngestionPipeline` (Sprint 2), embedding via `SentenceTransformerEmbedder`, upsert via `QdrantVectorStore` |
 
 ### Layer 2 — Poisoning Engine (`eiger/attacks/`)
 
@@ -60,7 +60,7 @@ Applies one or more adversarial attacks to a fraction of the corpus (the `poison
 | Poisoning | Calls `BaseAttack.apply(document, seed)` per document |
 | Output | Returns `list[PoisonedDocument]`, each with full provenance |
 | Corpus update | Upserts poisoned documents into the vector store alongside originals |
-| Status | Sprint 1 — all four built-in attacks implemented and tested |
+| Status | ✅ Sprint 1 — all four built-in attacks implemented and tested |
 
 ### Layer 3 — Retrieval (`eiger/retrieval/`, `eiger/vector_stores/`)
 
@@ -72,7 +72,7 @@ Given a `context_query` from a `Claim`, retrieves the top-k most similar documen
 | Vector search | Calls `BaseVectorStore.search()` returning ranked document dicts |
 | Result wrapping | Produces a `RetrievalResult` with ranked `RetrievedDocument` hits |
 | Poison detection | `RetrievalResult.contains_poisoned` and `poison_ratio` are derived properties |
-| Status | Sprint 2 — dense retrieval via Qdrant implemented; sparse/hybrid planned |
+| Status | ✅ Sprint 2 — `DenseRetriever` via Qdrant implemented; `SparseRetriever`/`HybridRetriever` planned |
 
 ### Layer 4 — Generation (`eiger/llm/`)
 
@@ -83,7 +83,7 @@ Feeds the retrieved document texts and the original query to an LLM backend to p
 | Prompt construction | `BaseLLM.build_rag_prompt(query, context_docs)` |
 | Generation | `BaseLLM.generate(prompt)` returns the answer string |
 | Output | Produces a `GenerationResult` with query, context, answer, and model name |
-| Status | Sprint 2 — Ollama backend implemented; OpenAI adapter planned |
+| Status | ✅ Sprint 2 — `OllamaLLM` implemented; `OpenAILLM` adapter planned |
 
 ### Layer 5 — Evaluation (`eiger/metrics/`)
 
@@ -95,7 +95,7 @@ Computes one or more `BaseMetric` values for each `(query, retrieved context, ge
 | Metric dispatch | Iterates over metric names from `ExperimentConfig.metrics` |
 | Score collection | Calls `BaseMetric.compute(record)` for each metric |
 | Aggregation | Calls `BaseMetric.aggregate(scores)` for experiment-level summary |
-| Status | Sprint 1 — FFR and ERS implemented; SourceIntegrity NLI backend in Sprint 4 |
+| Status | ✅ FFR and ERS implemented (Sprint 1); SourceIntegrity NLI backend implemented but falls back to 0.0 without `transformers`/`torch`; FFR's required `ragas_faithfulness`/`ragas_answer_correctness` inputs are populated by an optional `faithfulness_scorer` hook — `EmbeddingFaithfulnessScorer` (Sprint 2) is a heuristic embedding-similarity proxy, not RAGAS; a real RAGAS-based scorer is future work |
 
 ### Layer 6 — Analytics (`eiger/experiments/`)
 
@@ -106,7 +106,7 @@ Persists the full `ExperimentResult` to disk, computes aggregate statistics, and
 | Result serialization | `ExperimentResult.to_json()` writes results to `output_dir/results.json` |
 | Provenance | Git commit hash, timestamp, config hash, environment dict |
 | Reproducibility | `config_hash` is a SHA-256 fingerprint of the full config |
-| Status | Sprint 3 — basic JSON output complete; analytics dashboard planned |
+| Status | ✅ Sprint 2 — `ExperimentRunner` orchestrates the full pipeline and writes `results.json`; no CLI entry point or analytics dashboard yet |
 
 ---
 

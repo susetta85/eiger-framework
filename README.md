@@ -4,8 +4,8 @@
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-63%20passing-brightgreen.svg)](tests/)
-[![Sprint](https://img.shields.io/badge/sprint-1%20complete-blue.svg)](docs/ARCHITECTURE.md)
+[![Tests](https://img.shields.io/badge/tests-297%20passing-brightgreen.svg)](tests/)
+[![Sprint](https://img.shields.io/badge/sprint-2%20complete-blue.svg)](docs/ARCHITECTURE.md)
 
 ---
 
@@ -83,12 +83,13 @@ EIBench is a six-layer pipeline. Each layer is independently extensible via a pl
 
 | Layer | Component | Status |
 |-------|-----------|--------|
-| 1 | Corpus Builder | ✅ Sprint 1 |
+| 1 | Corpus Builder + Ingestion Pipeline (embed + upsert) | ✅ Sprint 1 + 2 |
 | 2 | Poisoning Engine (4 attack types) | ✅ Sprint 1 |
-| 3 | Qdrant retrieval | ✅ Sprint 1 (wiring Sprint 3) |
-| 4 | Llama 3.1 / Mistral via Ollama | 🔄 Sprint 3 |
-| 5 | SI (NLI), FFR, ERS, RAGAS | 🔄 Sprint 4 |
-| 6 | Degradation curves, HTML report | 🔄 Sprint 5 |
+| 3 | Dense retrieval (Qdrant + sentence-transformers) | ✅ Sprint 2 |
+| 4 | Llama 3.1 / Mistral via Ollama | ✅ Sprint 2 |
+| 5 | FFR, ERS implemented; SI (NLI) falls back to 0.0 without `transformers`/`torch`; FFR's faithfulness signal is a heuristic embedding proxy, not RAGAS yet | ✅ Sprint 1 + 2 |
+| 6 | `ExperimentRunner` orchestration + `results.json` provenance | ✅ Sprint 2 |
+| — | Dataset loaders (AVeriTeC, PolitiFact, …), CLI entry point, real RAGAS-based faithfulness scorer, degradation curves / HTML report | 🔄 Future sprints |
 
 ---
 
@@ -148,16 +149,47 @@ make test
 
 ### 6. Run a full experiment
 
+There is no `__main__.py` CLI entry point yet — `python -m eiger run ...` is
+not implemented. Today, a full experiment (corpus → ingestion → retrieval →
+generation → metrics → `results.json`) is run via the Python API:
+
 ```bash
 # Pull the LLM first (one-time, ~5GB)
 docker exec eiger-ollama ollama pull llama3.1:8b
-
-# Run baseline experiment
-python -m eiger run experiments/baseline_v1.yaml
-
-# Run ablation study (all 4 attacks)
-python -m eiger run experiments/ablation_attacks.yaml
 ```
+
+```python
+from eiger.experiments import ExperimentRunner
+from eiger.retrieval import SentenceTransformerEmbedder
+from eiger.vector_stores import QdrantVectorStore
+from eiger.llm import OllamaLLM
+from eiger.metrics import EmbeddingFaithfulnessScorer
+from eiger.core.models import ExperimentConfig, DatasetConfig, RetrieverConfig, LLMConfig
+
+config = ExperimentConfig(
+    dataset=DatasetConfig(name="json_fixture"),
+    retriever=RetrieverConfig(collection_name="eiger_baseline_v1"),
+    llm=LLMConfig(model="llama3.1:8b"),
+    metrics=["ffr", "ers", "source_integrity"],
+    output_dir="results/baseline_v1",
+)
+embedder = SentenceTransformerEmbedder()
+
+runner = ExperimentRunner(
+    config=config,
+    embedder=embedder,
+    vector_store=QdrantVectorStore(),
+    llm=OllamaLLM(model_name=config.llm.model),
+    faithfulness_scorer=EmbeddingFaithfulnessScorer(embedder),  # see FFR note below
+)
+result = runner.run(my_claims)  # writes results/baseline_v1/results.json
+```
+
+**FFR note:** `EmbeddingFaithfulnessScorer` is a cosine-similarity *proxy* for
+the faithfulness/answer-correctness signal FFR needs — not RAGAS. Report
+FFR computed this way as "FFR (embedding-similarity proxy)". See
+`eiger/metrics/README.md` and `eiger/experiments/README.md` for the full
+rationale and how to plug in a real RAGAS-based scorer later.
 
 ---
 
@@ -180,7 +212,7 @@ eiger-framework/
 │   └── utils/                # Logging, seeding, hashing
 │
 ├── tests/
-│   ├── unit/                 # Fast, no external services (63 tests)
+│   ├── unit/                 # Fast, no external services (297 tests, 100% coverage)
 │   └── integration/          # Requires docker compose up
 │
 ├── experiments/              # YAML experiment definitions

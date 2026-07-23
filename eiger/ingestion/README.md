@@ -104,20 +104,56 @@ print(f"Poison ratio    : {result.poison_ratio:.2%}")
 
 ---
 
-## Relationship to the vector store (Layer 3)
+## Relationship to the vector store: `IngestionPipeline`
 
 `CorpusBuilder.build()` produces `result.all_documents` but does not write anything to
-storage. The caller is responsible for passing those documents to the vector-store
-ingestion layer, which embeds them and upserts them into Qdrant. This separation allows
-the same `CorpusBuilderResult` to be inspected, serialised, or used in offline analysis
-before any network calls are made.
+storage. This separation allows the same `CorpusBuilderResult` to be inspected,
+serialised, or used in offline analysis before any network calls are made.
+
+**`IngestionPipeline`** (Sprint 2, Step 4 — implemented) is the component responsible
+for the next step: embedding every document in a `CorpusBuilderResult` and upserting it
+into a vector store.
+
+```python
+from eiger.ingestion import CorpusBuilder, IngestionPipeline
+from eiger.retrieval import SentenceTransformerEmbedder
+from eiger.vector_stores import QdrantVectorStore
+
+embedder = SentenceTransformerEmbedder()
+vector_store = QdrantVectorStore()
+
+corpus = CorpusBuilder(attacks=my_attacks, seed=42).build(claims)
+
+pipeline = IngestionPipeline(
+    embedder=embedder, vector_store=vector_store, collection="eiger_corpus",
+)
+result = pipeline.ingest(corpus)  # reset=True by default: clean corpus per run
+
+print(result.n_documents)     # ground-truth + poisoned
+print(result.embedding_dim)   # from embedder.embedding_dim
+```
+
+- **`reset=True` by default**: calls `vector_store.reset_collection()` first, so every
+  experiment run starts from a clean corpus. Pass `reset=False` to append to an
+  existing collection instead.
+- **Single `encode()` call**: all document texts are embedded in one batched call
+  (`BaseEmbedder.encode()` already batches internally), not one call per document.
+- **Empty corpus is a no-op, not an error**: `encode()`/`upsert()` are skipped entirely
+  for an empty document list (the collection is still reset if requested).
+- Any failure resetting the collection, encoding, or upserting is wrapped in
+  `IngestionError` with the original exception chained as `__cause__`.
+
+`DenseRetriever` (see `eiger/retrieval/README.md`) must be constructed with the *same*
+embedder/vector_store/collection as `IngestionPipeline` for retrieval scores to be
+meaningful — `ExperimentRunner` enforces this by sharing one embedder/vector_store
+instance between both.
 
 ---
 
-## Planned Sprint 2 additions
+## Dataset loading (still pending)
 
-The current implementation generates ground-truth documents from synthetic claim data.
-Sprint 2 will introduce real dataset loaders from `eiger.datasets`, enabling
-`CorpusBuilder` to operate over claims loaded from AVeriTeC, PolitiFact, and
-FactCheck.org. The `CorpusBuilder` API is not expected to change; only the source of
-the `claims` list will differ.
+The current implementation accepts `claims: list[Claim]` directly — there is no
+`BaseDataset` implementation yet (`eiger/datasets/` is still empty). Real dataset
+loaders for AVeriTeC, PolitiFact, and FactCheck.org remain future work. The
+`CorpusBuilder` API is not expected to change; only the source of the `claims` list
+will differ once a loader exists.

@@ -1,22 +1,89 @@
 # eiger.retrieval
 
-**Status: Not yet implemented — planned for Sprint 3.**
+**Status: `SentenceTransformerEmbedder` and `DenseRetriever` implemented (Sprint 2, Steps 1 & 3). `SparseRetriever` / `HybridRetriever` remain future work.**
 
-This module will provide all document retrieval strategies used in the EIGER
-evaluation pipeline. Retrievers consume a query string and return a ranked list
-of documents from the vector corpus.
+This module provides the embedder and retrieval strategies used in the EIGER
+evaluation pipeline. `DenseRetriever` consumes a query string and returns a
+ranked list of documents from the vector corpus; `SentenceTransformerEmbedder`
+turns text into the dense vectors that both retrieval and ingestion rely on.
 
 ---
 
-## Planned Architecture
+## Architecture
 
-| Retriever Type  | Method                  | Library                          | Strengths                          | Limitations                            |
-|-----------------|-------------------------|----------------------------------|------------------------------------|----------------------------------------|
-| `DenseRetriever`  | Cosine similarity        | Qdrant + sentence-transformers   | Semantic recall, robust to paraphrase | Slower indexing, requires GPU for large models |
-| `SparseRetriever` | BM25                    | rank-bm25                        | Fast, interpretable, no embedder needed | Lexical matching only, no semantic understanding |
-| `HybridRetriever` | RRF fusion (dense + sparse) | rank-bm25 + Qdrant            | Best of both, generally highest recall | More moving parts, two indices required |
+| Component | Class | Method | Library | Status |
+|-----------|-------|--------|---------|--------|
+| Embedder | `SentenceTransformerEmbedder` | Dense embedding | sentence-transformers | ✅ Implemented |
+| Dense retriever | `DenseRetriever` | Cosine similarity via Qdrant | `BaseEmbedder` + `BaseVectorStore` | ✅ Implemented |
+| Sparse retriever | `SparseRetriever` | BM25 | rank-bm25 | 🔲 Planned |
+| Hybrid retriever | `HybridRetriever` | RRF fusion (dense + sparse) | rank-bm25 + Qdrant | 🔲 Planned |
 
-All concrete retrievers will extend `BaseRetriever` from `eiger.core.interfaces`.
+`DenseRetriever` extends `BaseRetriever` from `eiger.core.interfaces`. It is a
+thin orchestration layer — it holds no corpus state itself and delegates
+entirely to the injected `BaseEmbedder` and `BaseVectorStore`.
+
+---
+
+## `SentenceTransformerEmbedder`
+
+```python
+from eiger.retrieval import SentenceTransformerEmbedder
+
+embedder = SentenceTransformerEmbedder()  # default: all-MiniLM-L6-v2, 384 dims
+vectors = embedder.encode(["Hello world", "Another sentence"])
+print(embedder.embedding_dim)  # 384
+```
+
+- **Lazy loading**: the underlying `SentenceTransformer` model is loaded on the
+  first call to `encode()` (or to the `embedding_dim` property), not at
+  construction time. Import and instantiation are fast and require no network
+  access; only the first real `encode()` call downloads/loads the model.
+- **Batching**: `encode()` calls the model once per batch (`batch_size`,
+  default 64), not once per text.
+- Raises `ImportError` with an actionable install hint if `sentence-transformers`
+  is not installed.
+
+---
+
+## `DenseRetriever`
+
+```python
+from eiger.retrieval import DenseRetriever, SentenceTransformerEmbedder
+from eiger.vector_stores import QdrantVectorStore
+
+retriever = DenseRetriever(
+    embedder=SentenceTransformerEmbedder(),
+    vector_store=QdrantVectorStore(),
+    collection="eiger_corpus",
+)
+result = retriever.retrieve(
+    query="What did the WHO report about 2023 inflation?",
+    claim_id="TEST_001",
+    top_k=5,
+)
+```
+
+**Same embedder for ingestion and retrieval.** `DenseRetriever` does not
+construct its own embedder — the caller must inject the *same* embedder
+(same model) used to embed the corpus during ingestion (see
+`eiger.ingestion.IngestionPipeline`). Mixing embedders makes similarity
+scores meaningless.
+
+**Score normalization.** `BaseVectorStore.search()` returns raw backend
+scores — for `QdrantVectorStore` (COSINE distance), cosine similarity in
+`[-1, 1]`. `RetrievedDocument.score` is constrained to `[0, 1]` by Pydantic,
+so `DenseRetriever` rescales with `(score + 1) / 2`, clamped defensively
+against floating-point edge cases.
+
+**Document reconstruction.** `BaseVectorStore.search()` returns raw dicts
+(`{"doc_id", "score", "payload"}`), not `Document` objects — `DenseRetriever`
+rebuilds a `Document` from each hit's payload (`doc_id`, `claim_id`, `text`,
+`doc_type`), keeping vector store backends decoupled from the retrieval layer.
+
+**Error handling.** Any failure encoding the query or querying the vector
+store is wrapped in `RetrievalError` (including the case where the embedder
+returns no vector for a non-empty query), so callers only need to catch one
+exception type at the retrieval boundary.
 
 ---
 
@@ -32,14 +99,12 @@ class BaseRetriever(ABC):
         """
         Retrieve top_k documents for a query.
 
-        Args:
-            query:    Natural language query string.
-            claim_id: Identifier of the parent claim (for provenance).
-            top_k:    Maximum number of documents to return.
-
         Returns:
             RetrievalResult containing ranked RetrievedDocument objects,
             each with a similarity score in [0, 1] and a rank index.
+
+        Raises:
+            RetrievalError: If retrieval fails.
         """
 ```
 
@@ -55,27 +120,24 @@ Retrievers are configured via `RetrieverConfig` from `eiger.core.models`:
 
 ```python
 class RetrieverConfig(BaseModel):
-    type: str            # "dense" | "sparse" | "hybrid"
-    embedder: str        # HuggingFace model ID (dense and hybrid only)
-    vector_store: str    # "qdrant" | "chroma" | "faiss"
-    top_k: int           # Number of documents to retrieve
-    collection_name: str # Target collection in the vector store
+    type: str = "dense"           # "dense" | "sparse" | "hybrid" (only "dense" implemented)
+    embedder: str                 # HuggingFace model ID — provenance only, see note below
+    vector_store: str = "qdrant"  # provenance only, see note below
+    top_k: int = 5
+    collection_name: str = "eiger_corpus"
 ```
 
-Example (from `experiments/baseline_v1.yaml`):
-
-```yaml
-retriever:
-  type: dense
-  embedder: sentence-transformers/all-MiniLM-L6-v2
-  vector_store: qdrant
-  top_k: 5
-  collection_name: eibench_baseline_v1
-```
+**Note on `embedder` / `vector_store` fields:** `ExperimentRunner` does not
+build an embedder/vector-store instance from these strings — there is no
+factory for them yet. They exist for provenance (serialized into every result
+file) so a result can always be traced back to the model/backend that
+produced it. The caller constructs the actual `SentenceTransformerEmbedder`
+and `QdrantVectorStore` instances and injects them into `ExperimentRunner`,
+which should match what `RetrieverConfig` declares.
 
 ---
 
-## RRF Fusion (HybridRetriever)
+## RRF Fusion (planned — `HybridRetriever`)
 
 Reciprocal Rank Fusion combines dense and sparse rankings without requiring
 score normalization. Given rank `r` from each retriever, the fused score is:
@@ -84,15 +146,19 @@ score normalization. Given rank `r` from each retriever, the fused score is:
 RRF(d) = sum(1 / (k + r_i(d)))   for each retriever i
 ```
 
-The default constant `k = 60` follows the original RRF paper.
+The default constant `k = 60` follows the original RRF paper. Not yet implemented.
 
 ---
 
-## Sprint 3 Milestone
+## Test coverage
 
-- [ ] `BaseRetriever` ABC (already defined in `eiger.core.interfaces`)
-- [ ] `DenseRetriever` — cosine search via `QdrantVectorStore`
+`tests/unit/test_embedder.py` (13 tests) and `tests/unit/test_retriever.py`
+(32 tests) cover both classes with 100% line coverage, using mocked
+`sentence-transformers` / `BaseVectorStore` — no real model download or
+Qdrant server required.
+
+## Remaining work
+
 - [ ] `SparseRetriever` — BM25 index via `rank-bm25`
 - [ ] `HybridRetriever` — RRF fusion of dense and sparse rankings
-- [ ] Unit tests: determinism, score bounds, `RetrievalResult` shape
-- [ ] Integration tests: round-trip against a live Qdrant instance
+- [ ] Integration tests: round-trip against a live Qdrant instance + real embedder

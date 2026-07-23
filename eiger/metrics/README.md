@@ -77,13 +77,55 @@ FFR reads two keys from `EvaluationRecord.metrics` (a `dict[str, float]`):
 
 | Key | Source | Meaning |
 |---|---|---|
-| `ragas_faithfulness` | RAGAS upstream scorer | How closely the LLM answer is grounded in the retrieved context. Range [0, 1]. |
-| `ragas_answer_correctness` | RAGAS upstream scorer | How factually correct the answer is relative to ground truth. Range [0, 1]. |
+| `ragas_faithfulness` | External scorer (see below) | How closely the LLM answer is grounded in the retrieved context. Range [0, 1]. |
+| `ragas_answer_correctness` | External scorer (see below) | How factually correct the answer is relative to ground truth. Range [0, 1]. |
 
 If either key is missing, `EvaluationRecord.faithfulness_score` and
 `EvaluationRecord.factual_correctness_score` return 0.0 as defaults, which
-means the record will not be counted as a faithful falsehood. Ensure the RAGAS
-pipeline populates both keys before running FFR.
+means the record will not be counted as a faithful falsehood — FFR would
+trivially be 0.0 for the whole experiment. **No component in EIGER populates
+these keys automatically.** They must be populated by whatever callable is
+passed as `ExperimentRunner`'s `faithfulness_scorer` argument before `run()`
+computes metrics — see `EmbeddingFaithfulnessScorer` below, and
+`eiger/experiments/README.md` for the full hook mechanism.
+`ExperimentRunner` logs a warning once per run if `"ffr"` is configured with
+no scorer at all.
+
+---
+
+## `EmbeddingFaithfulnessScorer` — a heuristic proxy for FFR's inputs
+
+`eiger.metrics.heuristic_scorer.EmbeddingFaithfulnessScorer` populates
+`ragas_faithfulness` / `ragas_answer_correctness` using cosine similarity
+between embeddings — no LLM judge, no new heavy dependency (reuses
+`BaseEmbedder`, already in the project via `SentenceTransformerEmbedder`).
+
+```python
+from eiger.metrics import EmbeddingFaithfulnessScorer
+from eiger.retrieval import SentenceTransformerEmbedder
+
+scorer = EmbeddingFaithfulnessScorer(embedder=SentenceTransformerEmbedder())
+scores = scorer(claim, generation)
+# {"ragas_faithfulness": 0.83, "ragas_answer_correctness": 0.41}
+```
+
+- `ragas_faithfulness` proxy = cosine similarity between the answer and the
+  concatenated retrieved context, rescaled from `[-1, 1]` to `[0, 1]`.
+- `ragas_answer_correctness` proxy = cosine similarity between the answer and
+  `claim.original_fact` (the ground truth), rescaled the same way.
+- Both default to `0.0` if the answer, context, or ground-truth text is
+  blank — nothing meaningful to compare.
+- **It is NOT `BaseMetric`** and is deliberately **not registered** in the
+  metric registry — it produces raw scores to seed `EvaluationRecord.metrics`
+  *before* metrics run, not a reportable `MetricScore` in its own right. Pass
+  an instance directly to `ExperimentRunner(faithfulness_scorer=...)`.
+- **It is NOT RAGAS.** It cannot detect logical entailment, negation, or
+  numeric sign flips the way a real NLI/LLM judge can — it is a coarse
+  lexical/semantic similarity signal. Any FFR value computed with it must be
+  reported as **"FFR (embedding-similarity proxy)"**, never as "FFR (RAGAS)".
+  It logs a warning once on construction as a reminder of exactly this. A
+  real RAGAS-based scorer remains future work and is a drop-in replacement —
+  `ExperimentRunner` does not need to change.
 
 ---
 

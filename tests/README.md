@@ -27,12 +27,28 @@ pytest tests/ --cov=eiger --cov-report=term-missing
 ## Test Suite Overview
 
 | Suite       | Location            | Count | Speed  | External Services |
-|-------------|---------------------|-------|--------|-------------------|
-| Unit        | `tests/unit/`       | 63    | Fast   | None              |
-| Integration | `tests/integration/`| TBD   | Slow   | Qdrant, Ollama    |
+|-------------|---------------------|-------|--------|--------------------|
+| Unit        | `tests/unit/`       | 297   | Fast   | None               |
+| Integration | `tests/integration/`| 3     | Fast–Slow | None required (see below) |
 
-Integration tests are planned for Sprint 3, alongside the retrieval, vector
-store, and LLM implementations they will exercise.
+Integration tests are split into two files with different infrastructure
+requirements:
+
+- **`test_pipeline_fake_infra.py`** (2 tests) — always runs, no external
+  services or heavy ML dependencies. Exercises the *real* orchestration
+  logic (`CorpusBuilder` → `IngestionPipeline` → `DenseRetriever` →
+  `ExperimentRunner` → metrics → `ExperimentResult`) against small but
+  functionally working fake implementations of `BaseEmbedder`/
+  `BaseVectorStore`/`BaseLLM` (real cosine similarity, real in-memory
+  storage, a deterministic echo-LLM) — not `MagicMock` call-assertions like
+  `tests/unit/`.
+- **`test_pipeline_live_infra.py`** (1 test) — exercises the real production
+  stack: `SentenceTransformerEmbedder`, `QdrantVectorStore`, `OllamaLLM`.
+  Automatically **skips** (via a module-scoped fixture that checks TCP
+  reachability of the configured Qdrant/Ollama hosts, not a pytest marker)
+  when either service is unreachable, so `pytest tests/` remains safe to run
+  without Docker. Run `make up` and pull the model referenced by
+  `_MODEL_NAME` in that file to actually execute it.
 
 ---
 
@@ -89,6 +105,35 @@ objects inline.
 
 ---
 
+## Sprint 2 unit test files
+
+Sprint 2 added the retrieval, ingestion, LLM, and orchestration layers, each
+with a corresponding unit test file mocking out its infrastructure boundary
+(`sentence-transformers`, `qdrant-client`, `httpx`) so no real model download
+or running service is required:
+
+| File | Tests | Covers |
+|---|---|---|
+| `test_embedder.py` | 13 | `SentenceTransformerEmbedder`: lazy loading, batching, `embedding_dim` |
+| `test_qdrant_store.py` | 19 | `QdrantVectorStore`: lazy client, collection lifecycle, upsert/search payload shape |
+| `test_retriever.py` | 32 | `DenseRetriever`: query encoding, search, score normalization, `RetrievalResult` assembly |
+| `test_pipeline.py` | 24 | `IngestionPipeline`: reset/encode/upsert orchestration, empty-corpus handling |
+| `test_ollama.py` | 38 | `OllamaLLM`: HTTP request/response handling, `build_rag_prompt()`, error paths |
+| `test_runner.py` | 34 | `ExperimentRunner`: full orchestration, attack/metric registry resolution, `faithfulness_scorer` hook, git/environment capture, result persistence |
+| `test_heuristic_scorer.py` | 23 | `EmbeddingFaithfulnessScorer`: cosine-similarity proxy semantics, blank-input edge cases |
+
+All of the above follow a common convention: a module-level `log` object is
+patched (`with patch("eiger.<module>.log")` or an autouse fixture doing the
+same) whenever the code under test would otherwise call `structlog` for
+real, since a pre-existing structlog version quirk raises `AttributeError`
+on the default `PrintLogger` when `configure_logging()` has run earlier in
+the same pytest process (fixed for `test_logging.py` itself via
+`structlog.reset_defaults()` in an autouse teardown fixture, to prevent that
+module's tests from corrupting global logging state for every
+alphabetically-later test file).
+
+---
+
 ## Adding Tests for a New Component
 
 When implementing a new module (e.g., a new attack, metric, or retriever),
@@ -100,19 +145,27 @@ add a corresponding test file in `tests/unit/` following this pattern:
    after calling the component and assert they are equal.
 3. **Registry test** — if the component registers itself, assert that it can
    be retrieved by name and that `list_*()` includes it.
+4. **Log patching** — if the component logs via `eiger.utils.logging.get_logger`,
+   patch its module-level `log` object (see "Sprint 2 unit test files" above)
+   rather than relying on `configure_logging()` having been called.
 
 For components that require external services, add integration tests in
-`tests/integration/` and mark them with `@pytest.mark.integration`.
+`tests/integration/`. There is no `@pytest.mark.integration` marker; instead,
+check reachability directly (see `_port_open()` /
+`_require_live_infra` in `test_pipeline_live_infra.py`) and call
+`pytest.skip(...)` when the service isn't available, so the test suite
+degrades gracefully without Docker rather than failing outright.
 
 ---
 
 ## Coverage
 
-Coverage is configured in `pyproject.toml`. The target threshold is 80%.
-A full coverage report is generated by `make test`:
+Coverage is configured in `pyproject.toml`. The target threshold is **100%**
+(`--cov-fail-under=100`), enforced on every `pytest` invocation via
+`addopts` — not just `make test`:
 
 ```bash
-pytest tests/ --cov=eiger --cov-report=term-missing --cov-fail-under=80
+pytest tests/unit/ --cov=eiger --cov-report=term-missing
 ```
 
 An HTML report is written to `htmlcov/` and is excluded from version control.

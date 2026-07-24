@@ -111,10 +111,31 @@ All attacks: deterministic (seed-controlled), isolated (no global state mutation
 
 ## Quick Start
 
+### 0. Starting from a fresh machine (nothing installed yet)?
+
+```bash
+git clone <repo-url>
+cd eiger-framework
+make bootstrap   # macOS: installs Homebrew, Python 3.12, offers to install
+                 # OrbStack, then runs `make setup` — see setup.sh for details
+```
+
+Then skip to step 3. If you already have Python 3.10+, go straight to step 1.
+
+**Where does this run?** Directly on your physical Mac's terminal — there
+is no separate "environment" to log into. OrbStack (or Docker Desktop) is
+just a Docker *engine* that runs in the background on your machine; once
+it's installed, `docker`/`docker compose` commands from your normal
+terminal work exactly the same either way. **ContainerLab is not
+needed** — it's an entirely optional, separate stack
+(`infra/containerlab/`) only for distributed network-topology research,
+not for running or developing EIGER experiments (see
+`docs/ARCHITECTURE.md`, "Distributed Research Stack").
+
 ### 1. Prerequisites
 
 - Python 3.10+
-- Docker (for Qdrant and Ollama)
+- Docker (via OrbStack or Docker Desktop — for Qdrant and Ollama)
 
 ### 2. Setup
 

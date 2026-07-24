@@ -1,4 +1,4 @@
-.PHONY: help setup install dev-install up down test test-unit test-integration lint type-check format clean
+.PHONY: help bootstrap setup install dev-install up down test test-unit test-integration lint type-check format clean
 
 PYTHON := python3
 PIP    := $(PYTHON) -m pip
@@ -9,10 +9,13 @@ help:  ## Show this help message
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 # ─── Environment ─────────────────────────────────────────────────────────────
-setup: ## Create virtualenv and install all dependencies
+bootstrap: ## Fresh machine, nothing installed yet: Homebrew + Python + Docker/OrbStack + setup (macOS only)
+	./setup.sh
+
+setup: ## Create virtualenv and install all dependencies (assumes python3.10+ already installed)
 	$(PYTHON) -m venv venv
 	./venv/bin/pip install --upgrade pip
-	./venv/bin/pip install -e ".[dev]"
+	./venv/bin/pip install -e ".[dev,data-import]"
 	@echo "✅  Run: source venv/bin/activate"
 
 install: ## Install package (production)

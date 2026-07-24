@@ -1,4 +1,4 @@
-.PHONY: help bootstrap setup install dev-install up down test test-unit test-integration lint type-check format clean
+.PHONY: help bootstrap setup install dev-install up up-docker-ollama ollama-pull down test test-unit test-integration lint type-check format clean
 
 PYTHON := python3
 PIP    := $(PYTHON) -m pip
@@ -9,11 +9,19 @@ help:  ## Show this help message
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 # ─── Environment ─────────────────────────────────────────────────────────────
-bootstrap: ## Fresh machine, nothing installed yet: Homebrew + Python + Docker/OrbStack + setup (macOS only)
+bootstrap: ## Fresh machine, nothing installed yet: installs Python/pip, Docker, Ollama (+ pulls its default model), then runs 'setup' (macOS via Homebrew, or Debian/Ubuntu via apt)
 	./setup.sh
 
 setup: ## Create virtualenv and install all dependencies (assumes python3.10+ already installed)
 	$(PYTHON) -m venv venv
+	@# Some Debian/Ubuntu python3-venv builds create a venv WITHOUT pip
+	@# (pip is stripped from the distro's ensurepip bundle on some
+	@# versions). Bootstrap it explicitly rather than assuming
+	@# `python3 -m venv` always includes it — this is exactly what
+	@# produced a confusing "pip: command not found" for a contributor
+	@# on Debian even though setup.sh had already apt-installed
+	@# python3-pip system-wide.
+	@test -x ./venv/bin/pip || ./venv/bin/python -m ensurepip --upgrade
 	./venv/bin/pip install --upgrade pip
 	./venv/bin/pip install -e ".[dev,data-import]"
 	@echo "✅  Run: source venv/bin/activate"
@@ -28,7 +36,16 @@ env: ## Copy .env.example to .env (first-time setup)
 	@test -f .env || (cp .env.example .env && echo "✅  Created .env — fill in your values.")
 
 # ─── Infrastructure ───────────────────────────────────────────────────────────
-up: ## Start Qdrant + Ollama via Docker Compose
+# Default: Qdrant via Docker, Ollama installed+run NATIVELY (by setup.sh /
+# `make bootstrap`) rather than in Docker. Two reasons: native Ollama gets
+# straightforward GPU access without container passthrough config, and it
+# avoids a port-11434 clash with a Dockerized Ollama container (a native
+# install and `docker compose`'s ollama service both bind the host's 11434
+# — starting both at once fails). The Dockerized Ollama service still
+# exists in docker-compose.yml, gated behind the "docker-ollama" Compose
+# profile, for anyone who wants the exact-pinned-image reproducibility
+# path instead — see docker-compose.yml's comments.
+up: ## Start Qdrant via Docker (Ollama should already be running natively — see 'make bootstrap')
 	@docker info >/dev/null 2>&1 || ( \
 		echo "❌  Docker daemon not reachable."; \
 		echo "    If you're using OrbStack: open it once from Applications/Launchpad"; \
@@ -36,12 +53,21 @@ up: ## Start Qdrant + Ollama via Docker Compose
 		echo "    starting, then re-run 'make up'. Same idea for Docker Desktop."; \
 		exit 1 \
 	)
-	docker compose up -d
+	docker compose up -d qdrant
 	@echo "⏳  Waiting for Qdrant..."
 	@sleep 3
 	@curl -sf http://localhost:6333/healthz && echo "✅  Qdrant is up" || echo "❌  Qdrant not ready"
+	@curl -sf http://localhost:11434/api/version >/dev/null 2>&1 \
+		&& echo "✅  Ollama is up (native)" \
+		|| echo "⚠️   Ollama not reachable on :11434 — see 'make bootstrap' or docker-compose.yml's docker-ollama profile"
 
-down: ## Stop all services
+up-docker-ollama: ## Alternative to native Ollama: start the pinned ollama/ollama:0.2.8 container too (do NOT run alongside native Ollama — port 11434 clash)
+	docker compose --profile docker-ollama up -d
+
+ollama-pull: ## Pull the default LLM into a NATIVE Ollama install (already done automatically by 'make bootstrap' — use this to re-pull or after a manual Ollama install)
+	ollama pull llama3.1:8b
+
+down: ## Stop all Docker services (does not touch a natively-installed Ollama)
 	docker compose down
 
 # ─── Tests ───────────────────────────────────────────────────────────────────

@@ -633,24 +633,28 @@ An experiment run is fully reproducible given:
 
 ## 9. Infrastructure
 
-### Development Stack (Docker Compose)
+### Development Stack (Docker Compose + native Ollama)
 
-The development environment is defined in `docker-compose.yml`. All images are pinned to exact versions for reproducibility.
+The development environment is defined in `docker-compose.yml`, plus a natively-installed Ollama. All Docker images are pinned to exact versions for reproducibility.
 
-| Service | Image | Ports | Purpose |
-|---|---|---|---|
-| `qdrant` | `qdrant/qdrant:v1.9.4` | 6333 (HTTP), 6334 (gRPC) | Vector store |
-| `ollama` | `ollama/ollama:0.2.8` | 11434 | LLM inference backend |
+| Service | Runs via | Image/Install | Ports | Purpose |
+|---|---|---|---|---|
+| `qdrant` | Docker | `qdrant/qdrant:v1.9.4` | 6333 (HTTP), 6334 (gRPC) | Vector store |
+| Ollama | Native (default) | Homebrew / official Linux installer | 11434 | LLM inference backend |
 
-Start the stack:
+Ollama runs natively rather than in Docker by default — simpler GPU access, and it avoids a port-11434 clash with the alternative Dockerized `ollama` service (see below). `make bootstrap` (`setup.sh`) installs it automatically if missing and pulls the default model.
+
+Start the stack and pull the model:
 
 ```bash
-docker compose up -d
-# Pull the default model after containers are healthy:
-docker exec eiger-ollama ollama pull llama3.1:8b
+make bootstrap        # one-time: installs Python, Docker, Ollama + pulls the default model
+make up                # starts Qdrant via Docker (Ollama already running natively)
+make ollama-pull        # re-pull / pull again if needed — no-op if already present
 ```
 
-Qdrant data and Ollama model weights are persisted in named Docker volumes (`qdrant_storage`, `ollama_data`).
+A pinned `ollama/ollama:0.2.8` container is also available, opt-in only, behind the `docker-ollama` Compose profile (`make up-docker-ollama`), for anyone who wants exact-image reproducibility instead of the native install; in that case pull the model with `docker exec eiger-ollama ollama pull llama3.1:8b`.
+
+Qdrant data is persisted in a named Docker volume (`qdrant_storage`); Ollama model weights are persisted under its native data directory (or the `ollama_data` Docker volume, only if using the `docker-ollama` profile).
 
 ### Distributed Research Stack (ContainerLab)
 

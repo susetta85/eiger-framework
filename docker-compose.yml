@@ -1,6 +1,19 @@
 # Reproducible research infrastructure for EIBench.
 # All images are pinned to exact versions.
-# Run: docker compose up -d
+#
+# Default (recommended): `make up` / `docker compose up -d qdrant` starts
+# ONLY Qdrant. Ollama is installed and run NATIVELY instead (see
+# setup.sh / `make bootstrap` / `make ollama-pull`) — simpler GPU access,
+# and it avoids a port-11434 clash with the `ollama` service below, which
+# binds the same host port. Run "make up" (not plain "docker compose up -d")
+# so Qdrant-only is the default; only use the profile below if you
+# specifically want Ollama running in Docker instead of natively.
+#
+# Alternative: the pinned `ollama/ollama:0.2.8` container below, gated
+# behind the "docker-ollama" Compose profile so it never starts by
+# accident alongside a native Ollama install:
+#   docker compose --profile docker-ollama up -d   (== `make up-docker-ollama`)
+#   docker exec eiger-ollama ollama pull llama3.1:8b
 
 services:
 
@@ -23,6 +36,7 @@ services:
   ollama:
     image: ollama/ollama:0.2.8
     container_name: eiger-ollama
+    profiles: ["docker-ollama"]  # opt-in only — see the header comment above
     ports:
       - "11434:11434"
     volumes:

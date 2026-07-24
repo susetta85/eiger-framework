@@ -10,7 +10,9 @@ expects them to be used in a real experiment run.
 Requirements to actually execute this test (rather than skip it):
   - Qdrant reachable at EIGER_QDRANT_HOST:EIGER_QDRANT_PORT — `make up`
   - Ollama reachable at EIGER_OLLAMA_HOST:EIGER_OLLAMA_PORT, with _MODEL_NAME
-    already pulled: `docker exec eiger-ollama ollama pull llama3.1:8b`
+    already pulled — both handled automatically by `make bootstrap`
+    (native Ollama install + model pull); re-pull manually with
+    `make ollama-pull` if needed
   - `sentence-transformers` installed (downloads ~22MB on first use)
 
 If either service is unreachable, the test SKIPS (not fails), so `pytest
@@ -71,8 +73,8 @@ def _require_live_infra() -> None:
     if not (qdrant_up and ollama_up):
         pytest.skip(
             "Qdrant and/or Ollama not reachable at the configured "
-            f"EIGER_QDRANT_HOST/PORT and EIGER_OLLAMA_HOST/PORT. Run `make up` "
-            f"and `docker exec eiger-ollama ollama pull {_MODEL_NAME}` to "
+            "EIGER_QDRANT_HOST/PORT and EIGER_OLLAMA_HOST/PORT. Run "
+            f"`make up` and `make ollama-pull` (pulls {_MODEL_NAME}) to "
             "exercise this test against real infrastructure."
         )
 

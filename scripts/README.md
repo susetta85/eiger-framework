@@ -76,8 +76,8 @@ pip install 'eiger[data-import]'   # one-time: installs openpyxl
 # Pilot run first — always check output quality before the full batch:
 python scripts/enrich_snopes_claims.py path/to/Snopes.xlsx --limit 20 -o /tmp/pilot.json
 
-# Full run (requires a running Ollama server with the model pulled —
-# `make up`, then `docker exec eiger-ollama ollama pull llama3.1:8b`):
+# Full run (requires a running Ollama server with the model pulled — already
+# set up by `make bootstrap`, or manually via `make ollama-pull`):
 python scripts/enrich_snopes_claims.py path/to/Snopes.xlsx \
     -o data/snopes/snopes_enriched.json
 ```

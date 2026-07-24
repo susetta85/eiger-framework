@@ -48,8 +48,8 @@ is also checkpointed to disk every ``--checkpoint-every`` claims (default
 Usage
 ------
     # Requires: `pip install 'eiger[data-import]'` and a running Ollama
-    # server with the target model pulled (`make up`, then
-    # `docker exec eiger-ollama ollama pull llama3.1:8b`).
+    # server with the target model pulled — already set up by
+    # `make bootstrap`, or manually via `make ollama-pull`.
 
     # Pilot run on a small sample first (recommended before the full batch):
     python scripts/enrich_snopes_claims.py Snopes.xlsx --limit 20 -o /tmp/pilot.json

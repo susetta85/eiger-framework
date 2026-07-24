@@ -103,18 +103,28 @@ EIGER_RESULTS_DIR=results
 
 All environment variables are prefixed `EIGER_` and are loaded via Pydantic Settings.
 
-### 4. Start the Docker Services
+### 4. Start the Infrastructure
+
+By default, Ollama runs **natively** on the host (installed by `make bootstrap`
+/ `setup.sh`, not in Docker — simpler GPU access and no port-11434 clash),
+while Qdrant runs via Docker:
 
 ```bash
 make up
 ```
 
-This starts two containers in the background:
+This starts one container in the background:
 
 - `eiger-qdrant` — Qdrant v1.9.4 vector store on port 6333
-- `eiger-ollama` — Ollama 0.2.8 LLM runtime on port 11434
 
-Wait approximately 30 seconds for both services to finish initialising before continuing.
+Ollama should already be running natively (`make bootstrap` starts it and
+pulls the default model automatically). Wait approximately 10 seconds for
+Qdrant to finish initialising before continuing.
+
+If you'd rather use the pinned `ollama/ollama:0.2.8` container instead of a
+native Ollama install, it's available behind the opt-in `docker-ollama`
+Compose profile: `make up-docker-ollama` (do not run this alongside a native
+Ollama — both bind port 11434).
 
 ### 5. Verify that Qdrant is Reachable
 
@@ -140,22 +150,30 @@ Expected response: a JSON object with an empty or populated `models` list.
 
 ### 7. Pull the Required LLM Model
 
-The experiments use `llama3.1:8b`. Pull it into the Ollama container:
+The experiments use `llama3.1:8b`. `make bootstrap` already pulls it
+automatically into the native Ollama install; to pull it again (or after a
+manual Ollama install) run:
 
 ```bash
-docker exec eiger-ollama ollama pull llama3.1:8b
+make ollama-pull
 ```
 
-This download is approximately 4.7 GB. Progress is printed to stdout. Wait for
-`success` to appear before proceeding.
+This download is approximately 4.7 GB (skipped automatically if already
+present). Progress is printed to stdout. Wait for it to finish before
+proceeding.
 
 To confirm the model is available:
 
 ```bash
-docker exec eiger-ollama ollama list
+ollama list
 ```
 
 Expected output includes a row for `llama3.1:8b`.
+
+If instead you're using the Dockerized Ollama alternative
+(`make up-docker-ollama`), pull with
+`docker exec eiger-ollama ollama pull llama3.1:8b` and list with
+`docker exec eiger-ollama ollama list`.
 
 ---
 
@@ -339,17 +357,18 @@ docker compose logs qdrant
 **Diagnosis:**
 
 ```bash
-docker exec eiger-ollama ollama list
+ollama list
 ```
 
 **Fix:** Re-pull the model:
 
 ```bash
-docker exec eiger-ollama ollama pull llama3.1:8b
+make ollama-pull
 ```
 
 If the download fails partway, re-running the pull command resumes from where it
-stopped.
+stopped. (If using the Dockerized Ollama alternative instead of native, use
+`docker exec eiger-ollama ollama list` / `docker exec eiger-ollama ollama pull llama3.1:8b`.)
 
 ---
 

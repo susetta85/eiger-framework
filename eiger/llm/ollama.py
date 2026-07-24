@@ -2,9 +2,17 @@
 OllamaLLM: BaseLLM implementation backed by a local Ollama server.
 
 Ollama (https://ollama.com) serves open-weight LLMs over a simple local
-HTTP API. The Docker Compose infrastructure pins ``ollama/ollama:0.2.8``
-(see docker-compose.yml) and expects the target model to already be
-pulled on the server, e.g.::
+HTTP API. By default EIGER expects Ollama installed and running NATIVELY
+on the host (see setup.sh / ``make bootstrap``, which also pulls the
+default model automatically), not via Docker. It expects the target
+model to already be pulled on the server, e.g.::
+
+    make ollama-pull                    # pulls the default (llama3.1:8b)
+    ollama pull mistral:7b              # or any other model, directly
+
+A pinned ``ollama/ollama:0.2.8`` container is also available as an
+opt-in alternative behind docker-compose.yml's "docker-ollama" profile
+(``make up-docker-ollama``), in which case the equivalent is::
 
     docker exec eiger-ollama ollama pull llama3.1:8b
 

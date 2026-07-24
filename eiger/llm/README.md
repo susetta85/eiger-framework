@@ -119,16 +119,21 @@ actual `OllamaLLM(model_name=config.llm.model, ...)` instance and injects it;
 
 ## Model Setup (Ollama)
 
-Ollama runs as a Docker service alongside Qdrant. Pull a model into the
-running container with:
+By default, Ollama runs **natively** on the host (not in Docker) — see
+`setup.sh` / `make bootstrap`, which installs it if missing and
+automatically pulls the default model. Only Qdrant runs via Docker
+(`make up`). Pull models directly:
 
 ```bash
-docker exec eiger-ollama ollama pull llama3.1:8b
-docker exec eiger-ollama ollama pull mistral:7b
-docker exec eiger-ollama ollama list
+make ollama-pull            # pulls the default model (llama3.1:8b)
+ollama pull mistral:7b
+ollama list
 ```
 
-The Ollama service is started with `make up` (`docker compose up -d`).
+If you'd rather use the pinned `ollama/ollama:0.2.8` container instead
+of a native install, it's available behind docker-compose.yml's
+opt-in `docker-ollama` profile (`make up-docker-ollama`); in that case
+pull models with `docker exec eiger-ollama ollama pull llama3.1:8b`.
 
 ---
 

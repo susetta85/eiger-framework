@@ -116,17 +116,20 @@ All attacks: deterministic (seed-controlled), isolated (no global state mutation
 ```bash
 git clone <repo-url>
 cd eiger-framework
-make bootstrap   # macOS: installs Homebrew, Python 3.12, offers to install
-                 # OrbStack, then runs `make setup` — see setup.sh for details
+make bootstrap   # macOS (Homebrew) or Debian/Ubuntu Linux (apt) — installs
+                 # Python + Docker if missing, then runs `make setup`.
+                 # See setup.sh for exactly what it does on each platform.
 ```
 
 Then skip to step 3. If you already have Python 3.10+, go straight to step 1.
 
-**Where does this run?** Directly on your physical Mac's terminal — there
-is no separate "environment" to log into. OrbStack (or Docker Desktop) is
-just a Docker *engine* that runs in the background on your machine; once
-it's installed, `docker`/`docker compose` commands from your normal
-terminal work exactly the same either way. **ContainerLab is not
+**Physical machine, VM, doesn't matter** — `make bootstrap`/`setup.sh`
+work the same on a physical Mac (via Homebrew + OrbStack/Docker Desktop)
+or a Debian/Ubuntu Linux machine or VM (via apt + Docker Engine). There
+is no separate "environment" to log into: OrbStack/Docker Desktop/Docker
+Engine are just a Docker *engine* running in the background on whichever
+machine you're on; `docker`/`docker compose` commands from that machine's
+normal terminal work the same either way. **ContainerLab is not
 needed** — it's an entirely optional, separate stack
 (`infra/containerlab/`) only for distributed network-topology research,
 not for running or developing EIGER experiments (see
@@ -174,8 +177,9 @@ make test
 ### 6. Run a full experiment
 
 ```bash
-# Pull the LLM first (one-time, ~5GB)
-docker exec eiger-ollama ollama pull llama3.1:8b
+# The default model is already pulled by 'make bootstrap'. To pull it again
+# (or after a manual Ollama install), one-time, ~5GB:
+make ollama-pull
 ```
 
 **Via the CLI** (`eiger` console script, or `python -m eiger`):

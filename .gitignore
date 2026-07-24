@@ -1,6 +1,7 @@
 # Python
 venv/
-venv-*/  # per-machine venvs (see Makefile's VENV_DIR — venv-<hostname>)
+# Per-machine venvs (see Makefile's VENV_DIR — venv-<hostname>)
+venv-*/
 .venv/
 __pycache__/
 *.pyc

@@ -1,10 +1,11 @@
 # eiger.datasets
 
-Status: **Sprint 3** — the registry and three concrete loaders,
-`JSONFixtureDataset`, `SnopesDataset`, and `AVeriTecDataset`, are
-implemented and tested. `AVeriTecDataset.download()` is a guard, not a
-real fetcher (see below). PolitiFact and FactCheck.org loaders are still
-planned (see `docs/DATASETS.md` for their full specs and the roadmap).
+Status: **Sprint 3** — the registry and four concrete loaders,
+`JSONFixtureDataset`, `SnopesDataset`, `AVeriTecDataset`, and
+`PolitiFactDataset`, are implemented and tested. Both
+`AVeriTecDataset.download()` and `PolitiFactDataset.download()` are
+guards, not real fetchers (see below). A FactCheck.org loader is still
+planned (see `docs/DATASETS.md` for its full spec and the roadmap).
 
 ---
 
@@ -16,7 +17,7 @@ planned (see `docs/DATASETS.md` for their full specs and the roadmap).
 | `json_fixture.py`| `JSONFixtureDataset` | `eibench_raw_claims.json`      | Implemented |
 | `snopes.py`      | `SnopesDataset`      | LLM-enriched Snopes export (`scripts/enrich_snopes_claims.py`) | Implemented |
 | `averitec.py`    | `AVeriTecDataset`    | AVeriTeC `*.jsonl` splits (manual download — see `docs/DATASETS.md` §3) | Implemented (loader only; `download()` is a guard) |
-| `politifact.py`  | `PolitiFactDataset`  | LIAR TSV                       | Planned     |
+| `politifact.py`  | `PolitiFactDataset`  | LIAR `*.tsv` splits (manual download — see `docs/DATASETS.md` §4) | Implemented (loader only; `download()` is a guard) |
 | `factcheck.py`   | `FactCheckDataset`   | CheckThat! corpus              | Planned     |
 
 `BaseDataset` itself is **not** re-declared here — it already lives in
@@ -56,7 +57,7 @@ Mirrors `eiger.attacks.registry` / `eiger.metrics.registry` exactly:
 ```python
 from eiger.datasets import get_dataset, list_datasets, register_dataset
 
-list_datasets()          # -> ["averitec", "json_fixture", "snopes"]
+list_datasets()          # -> ["averitec", "json_fixture", "politifact", "snopes"]
 dataset = get_dataset("json_fixture")  # fresh JSONFixtureDataset() instance
 ```
 
@@ -184,6 +185,37 @@ print(claims[0].metadata.get("evidence_urls"))  # real source URLs, if any
 
 ---
 
+## PolitiFactDataset
+
+Implements `BaseDataset` directly, like `AVeriTecDataset` (does not
+subclass `JSONFixtureDataset` — the raw format is LIAR's headerless TSV).
+Loads only `label == "true"` records from `<split>.tsv` files (default:
+`data/politifact/<split>.tsv`). LIAR has no evidence Q&A like AVeriTeC and
+no natural-language question like Snopes, so `context_query` is a simple
+templated fallback (`"Is it true that {statement}?"`) — no LLM required.
+See `eiger/datasets/politifact.py`'s module docstring and
+`docs/DATASETS.md` Section 4 for the full field mapping, including a
+correction of that section's own earlier (incorrect) example, which had
+suggested importing false/pants-fire claims — contradicting the
+verified-true-only philosophy actually implemented here and everywhere
+else.
+
+`download()` is a **guard, not a fetcher**, for the same reason as
+`AVeriTecDataset`: it no-ops if `*.tsv` files already exist, and otherwise
+raises `IngestionError` pointing at `docs/DATASETS.md` §4's manual
+download steps.
+
+```python
+from eiger.datasets import get_dataset
+
+dataset = get_dataset("politifact")  # defaults to data/politifact/
+dataset.download(target_dir="data/politifact")  # raises if files are missing
+claims = dataset.load(split="test", max_claims=100)
+print(claims[0].source_dataset)  # "politifact"
+```
+
+---
+
 ## Adding a new dataset loader
 
 1. Implement a `BaseDataset` subclass in a new module under `eiger/datasets/`
@@ -193,8 +225,8 @@ print(claims[0].metadata.get("evidence_urls"))  # real source URLs, if any
 3. Reference it by name in a `DatasetConfig.name` (YAML or code).
 4. Verify with `list_datasets()` and `get_dataset(name)`.
 
-See `docs/DATASETS.md` for the full specs (expected raw formats, download
-instructions) of the still-planned PolitiFact and FactCheck.org loaders.
+See `docs/DATASETS.md` for the full spec (expected raw format, download
+instructions) of the still-planned FactCheck.org loader.
 
 ---
 

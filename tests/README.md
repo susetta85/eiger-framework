@@ -28,7 +28,7 @@ pytest tests/ --cov=eiger --cov-report=term-missing
 
 | Suite       | Location            | Count | Speed  | External Services |
 |-------------|---------------------|-------|--------|--------------------|
-| Unit        | `tests/unit/`       | 384   | Fast   | None               |
+| Unit        | `tests/unit/`       | 409   | Fast   | None               |
 | Integration | `tests/integration/`| 3     | Fast–Slow | None required (see below) |
 
 Integration tests are split into two files with different infrastructure
@@ -144,13 +144,15 @@ Sprint 3 added the dataset layer:
 | `test_cli.py` | 22 | `eiger.__main__` (the `eiger` CLI): YAML config loading/validation, the component factory (`_build_dataset`/`_build_runner` — unsupported retriever/vector_store/llm backend values, correct component wiring), `run`/`list-datasets`/`list-attacks`/`list-metrics` subcommands, and `main()`'s dispatch + `EigerError`/`ImportError` → exit-code-1 handling |
 | `test_snopes.py` | 9 | `SnopesDataset`: identity/default path/registration, `source_dataset` correctly reporting `"snopes"` (the one behavior its `JSONFixtureDataset` parent couldn't provide unmodified), provenance passthrough, `download()` no-op |
 | `test_averitec.py` | 26 | `AVeriTecDataset` (implements `BaseDataset` directly — JSONL format, not JSON-array): `Supported`-label filtering, evidence-question-as-`context_query` (with templated fallback), claim_id stability under filtering, optional metadata passthrough (`claim_date`/`speaker`/`evidence_urls`), `split` file selection, `content_hash`, error paths (missing/invalid/non-object JSONL lines, missing `claim` field), and `download()`'s guard behavior (no-op if data present, `IngestionError` if not) |
+| `test_politifact.py` | 25 | `PolitiFactDataset` (implements `BaseDataset` directly — LIAR's headerless TSV format): `"true"`-label-only filtering (case-insensitive), templated `context_query` fallback (no evidence Q&A in LIAR), `.json`-suffix stripping from raw ids, defensive optional-metadata handling for short/blank rows (`subject`/`speaker`/`job_title`/`context`), `split` file selection, `content_hash`, error paths (missing file, rows with too few columns), and `download()`'s guard behavior |
 
 Follows the same module-level `log`-patching convention described above
 (patches `eiger.datasets.json_fixture.log` and, for `test_cli.py`,
 `eiger.__main__.log` plus `eiger.experiments.runner.log`; for
 `test_snopes.py`, both `eiger.datasets.json_fixture.log` and
 `eiger.datasets.snopes.log`; for `test_averitec.py`,
-`eiger.datasets.averitec.log`).
+`eiger.datasets.averitec.log`; for `test_politifact.py`,
+`eiger.datasets.politifact.log`).
 
 ---
 

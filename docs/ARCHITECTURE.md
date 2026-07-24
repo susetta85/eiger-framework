@@ -1,6 +1,6 @@
 # EIGER Framework — Architecture Reference
 
-> Version: 0.1.0 | Sprint 2 baseline
+> Version: 0.1.0 | Sprint 3 (dataset layer + CLI)
 > Package: `eiger` | Python >= 3.10
 
 ---
@@ -532,7 +532,7 @@ class EigerSettings(BaseSettings):
 
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
-    ollama_host: str = "localhost"
+    ollama_host: str = "127.0.0.1"  # not "localhost" — avoids IPv6-loopback issues
     ollama_port: int = 11434
     default_embedder: str = "sentence-transformers/all-MiniLM-L6-v2"
     results_dir: str = "results/"

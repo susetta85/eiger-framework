@@ -16,9 +16,10 @@ dependencies = [
     "qdrant-client>=1.9.0,<2.0",
     # Embeddings
     "sentence-transformers>=3.0.0,<4.0",
-    # Evaluation framework
-    "ragas>=0.1.0",
-    # NLI for Source Integrity metric
+    # NLI for Source Integrity metric (lazily imported — see
+    # eiger/metrics/source_integrity.py; falls back to 0.0 if unavailable,
+    # but is a real, actually-imported dependency, unlike ragas/rank-bm25
+    # below)
     "transformers>=4.40.0,<5.0",
     "torch>=2.2.0",
     # LLM backend (Ollama HTTP API)
@@ -29,8 +30,6 @@ dependencies = [
     "python-dotenv>=1.0.0",
     # Structured logging
     "structlog>=24.1.0",
-    # Sparse retrieval
-    "rank-bm25>=0.2.2",
     # Numerics
     "numpy>=1.26.0,<2.0",
     # CLI experiment config parsing (was only a transitive dependency
@@ -54,6 +53,16 @@ dev = [
 # core runtime dependency: running experiments never touches .xlsx files.
 data-import = [
     "openpyxl>=3.1.0,<4.0",
+]
+# For features that are planned but not yet implemented: a real RAGAS-based
+# faithfulness_scorer (see eiger/metrics/README.md) and sparse/hybrid
+# retrieval (see eiger/retrieval/README.md). Neither eiger/ nor scripts/
+# actually imports these today — they were previously listed as core
+# dependencies despite being unused, unnecessarily bloating every
+# `pip install eiger`. Install this extra only once that work starts.
+future = [
+    "ragas>=0.1.0",
+    "rank-bm25>=0.2.2",
 ]
 
 [project.scripts]

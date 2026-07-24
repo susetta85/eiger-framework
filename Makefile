@@ -115,7 +115,7 @@ audit: ## Audit dependencies with pip-audit
 	$(PYTHON) -m pip_audit
 
 # ─── Experiments ─────────────────────────────────────────────────────────────
-run: ## Run an experiment: make run CFG=experiments/baseline.yaml
+run: ## Run an experiment: make run CFG=experiments/baseline_v1.yaml
 	$(PYTHON) -m eiger run $(CFG)
 
 # ─── Cleanup ─────────────────────────────────────────────────────────────────

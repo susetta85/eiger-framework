@@ -1,6 +1,6 @@
 # eiger.experiments
 
-**Status: `ExperimentRunner` implemented (Sprint 2, Step 6). No CLI entry point / `__main__.py` yet.**
+**Status: `ExperimentRunner` implemented (Sprint 2, Step 6). CLI entry point (`eiger` / `python -m eiger`) implemented in Sprint 3 — see `eiger/__main__.py`.**
 
 This module provides the orchestration layer that wires the other Sprint 2
 components together and executes a complete evaluation run.
@@ -174,9 +174,16 @@ persistence, with 100% line coverage — using mocked `embedder`/
 
 ## Remaining work
 
-- [ ] `BaseDataset` integration (load claims from a named dataset instead of
-      accepting `list[Claim]` directly)
+- [x] `BaseDataset` integration — the CLI's `_build_dataset()` resolves a
+      `DatasetConfig` into a registered loader, calls `.load()`, and passes
+      the resulting `list[Claim]` into `ExperimentRunner.run()` (see
+      `eiger/__main__.py`). `ExperimentRunner.run()` itself still accepts
+      `list[Claim]` directly rather than a `DatasetConfig`, by design —
+      this keeps the runner decoupled from dataset resolution.
 - [ ] Real RAGAS-based `faithfulness_scorer` (replacing/complementing
       `EmbeddingFaithfulnessScorer`)
-- [ ] `__main__.py` CLI entry point (`python -m eiger run <config.yaml>`)
-- [ ] Integration tests: full end-to-end run against live Qdrant + Ollama
+- [x] `__main__.py` CLI entry point (`python -m eiger run <config.yaml>`) —
+      implemented Sprint 3.
+- [x] Integration tests: full end-to-end run against live Qdrant + Ollama —
+      `tests/integration/test_pipeline_live_infra.py` (skips gracefully if
+      either service is unreachable).

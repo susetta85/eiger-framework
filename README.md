@@ -193,7 +193,7 @@ make ollama-pull
 **Via the CLI** (`eiger` console script, or `python -m eiger`):
 
 ```bash
-eiger list-datasets     # json_fixture
+eiger list-datasets     # averitec, factcheck_org, json_fixture, politifact, snopes
 eiger list-attacks      # numerical_shift, attribution_switch, date_manipulation, causal_manipulation
 eiger list-metrics      # ffr, ers, source_integrity
 
@@ -267,9 +267,9 @@ eiger-framework/
 │   ├── attacks/              # Adversarial poisoning strategies
 │   ├── datasets/             # Dataset loaders (AVeriTeC, PolitiFact, …)
 │   ├── ingestion/            # Corpus builder
-│   ├── retrieval/            # Retrieval strategies (dense, sparse, hybrid)
-│   ├── vector_stores/        # Vector store adapters (Qdrant, FAISS, Chroma)
-│   ├── llm/                  # LLM backends (Ollama, OpenAI-compatible)
+│   ├── retrieval/            # Retrieval strategies (dense implemented; sparse/hybrid planned)
+│   ├── vector_stores/        # Vector store adapters (Qdrant implemented; FAISS/Chroma planned)
+│   ├── llm/                  # LLM backends (Ollama implemented; OpenAI-compatible planned)
 │   ├── metrics/              # Evaluation metrics (FFR, SI, ERS, RAGAS)
 │   ├── experiments/          # Experiment runner and orchestrator
 │   ├── config/               # Pydantic Settings
@@ -281,7 +281,12 @@ eiger-framework/
 │
 ├── experiments/              # YAML experiment definitions
 │   ├── baseline_v1.yaml
-│   └── ablation_attacks.yaml
+│   ├── ablation_attacks.yaml
+│   └── snopes_pilot.yaml
+│
+├── scripts/                  # Claim intake/enrichment (not part of the eiger package)
+│   ├── import_claims_xlsx.py     # xlsx -> unverified candidate JSON
+│   └── enrich_snopes_claims.py   # Snopes export -> LLM-enriched claims
 │
 ├── docs/                     # Extended documentation
 │   ├── ARCHITECTURE.md

@@ -71,7 +71,8 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 # Ollama's default local server address (see docker-compose.yml).
-DEFAULT_HOST = "localhost"
+#DEFAULT_HOST = "localhost"
+DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 11434
 # Matches LLMConfig.model's default (eiger.core.models) — a widely
 # available, instruction-tuned model suitable for RAG-style prompting.

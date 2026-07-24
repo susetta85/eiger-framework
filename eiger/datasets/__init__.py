@@ -23,9 +23,15 @@ Currently registered datasets
     data/politifact/ — see eiger.datasets.politifact and
     docs/DATASETS.md section 4 for manual download steps (automated
     download() is not yet implemented).
+  - FactCheckDataset ("factcheck_org") — FactCheck.org fact-checks via
+    the CheckThat! mirror ("true"-verdict subset only), with a templated
+    context_query fallback (no LLM needed). Requires pre-downloaded
+    *.jsonl split files under data/factcheck/ — see eiger.datasets.factcheck
+    and docs/DATASETS.md section 5 for manual download steps (automated
+    download() is not yet implemented).
 
-See docs/DATASETS.md for the full dataset roadmap (FactCheck.org — not
-yet implemented).
+See docs/DATASETS.md for the full dataset roadmap. All five documented
+datasets now have implemented loaders.
 
 Responsibilities of this module
 --------------------------------
@@ -39,17 +45,17 @@ What this module does NOT do
 - It does not call .load() or .download() on anything; construction and
   invocation are the caller's responsibility (typically resolved from a
   DatasetConfig.name via get_dataset()).
-- It does not implement a FactCheck.org loader yet — see docs/DATASETS.md
-  for the documented roadmap and expected format.
-- It does not implement AVeriTecDataset's/PolitiFactDataset's automated
-  download(); both loaders' download() is a guard (raises if data is
-  missing) rather than a fetcher — see their module docstrings.
+- It does not implement AVeriTecDataset's/PolitiFactDataset's/
+  FactCheckDataset's automated download(); all three loaders' download()
+  is a guard (raises if data is missing) rather than a fetcher — see
+  their module docstrings.
 """
 
 # ─── Registry helpers ───────────────────────────────────────────────────────
 
 # ─── Built-in dataset classes ────────────────────────────────────────────────
 from eiger.datasets.averitec import AVeriTecDataset
+from eiger.datasets.factcheck import FactCheckDataset
 from eiger.datasets.json_fixture import JSONFixtureDataset
 from eiger.datasets.politifact import PolitiFactDataset
 from eiger.datasets.registry import get_dataset, list_datasets, register_dataset
@@ -59,13 +65,14 @@ from eiger.datasets.snopes import SnopesDataset
 
 # Registered at import time so that `import eiger.datasets` immediately
 # enables `get_dataset("json_fixture")` / `get_dataset("snopes")` /
-# `get_dataset("averitec")` / `get_dataset("politifact")` with no further
-# setup. Idempotent, so repeated imports (e.g. across test modules) are
-# harmless.
+# `get_dataset("averitec")` / `get_dataset("politifact")` /
+# `get_dataset("factcheck_org")` with no further setup. Idempotent, so
+# repeated imports (e.g. across test modules) are harmless.
 register_dataset(JSONFixtureDataset)
 register_dataset(SnopesDataset)
 register_dataset(AVeriTecDataset)
 register_dataset(PolitiFactDataset)
+register_dataset(FactCheckDataset)
 
 # ─── Public API declaration ───────────────────────────────────────────────────
 
@@ -79,4 +86,5 @@ __all__ = [
     "SnopesDataset",
     "AVeriTecDataset",
     "PolitiFactDataset",
+    "FactCheckDataset",
 ]

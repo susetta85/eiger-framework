@@ -1,11 +1,13 @@
 # eiger.datasets
 
-Status: **Sprint 3** — the registry and four concrete loaders,
-`JSONFixtureDataset`, `SnopesDataset`, `AVeriTecDataset`, and
-`PolitiFactDataset`, are implemented and tested. Both
-`AVeriTecDataset.download()` and `PolitiFactDataset.download()` are
-guards, not real fetchers (see below). A FactCheck.org loader is still
-planned (see `docs/DATASETS.md` for its full spec and the roadmap).
+Status: **Sprint 3** — the registry and five concrete loaders,
+`JSONFixtureDataset`, `SnopesDataset`, `AVeriTecDataset`,
+`PolitiFactDataset`, and `FactCheckDataset`, are implemented and tested.
+All five datasets originally documented in `docs/DATASETS.md`'s roadmap
+now have loaders. `AVeriTecDataset.download()`,
+`PolitiFactDataset.download()`, and `FactCheckDataset.download()` are
+guards, not real fetchers (see below) — none of the three has been
+independently reviewed by the research team yet either.
 
 ---
 
@@ -18,7 +20,7 @@ planned (see `docs/DATASETS.md` for its full spec and the roadmap).
 | `snopes.py`      | `SnopesDataset`      | LLM-enriched Snopes export (`scripts/enrich_snopes_claims.py`) | Implemented |
 | `averitec.py`    | `AVeriTecDataset`    | AVeriTeC `*.jsonl` splits (manual download — see `docs/DATASETS.md` §3) | Implemented (loader only; `download()` is a guard) |
 | `politifact.py`  | `PolitiFactDataset`  | LIAR `*.tsv` splits (manual download — see `docs/DATASETS.md` §4) | Implemented (loader only; `download()` is a guard) |
-| `factcheck.py`   | `FactCheckDataset`   | CheckThat! corpus              | Planned     |
+| `factcheck.py`   | `FactCheckDataset`   | CheckThat! mirror `*.jsonl` splits (manual download — see `docs/DATASETS.md` §5) | Implemented (loader only; `download()` is a guard) |
 
 `BaseDataset` itself is **not** re-declared here — it already lives in
 `eiger/core/interfaces.py`, alongside every other core abstract interface
@@ -57,7 +59,7 @@ Mirrors `eiger.attacks.registry` / `eiger.metrics.registry` exactly:
 ```python
 from eiger.datasets import get_dataset, list_datasets, register_dataset
 
-list_datasets()          # -> ["averitec", "json_fixture", "politifact", "snopes"]
+list_datasets()          # -> ["averitec", "factcheck_org", "json_fixture", "politifact", "snopes"]
 dataset = get_dataset("json_fixture")  # fresh JSONFixtureDataset() instance
 ```
 
@@ -216,6 +218,38 @@ print(claims[0].source_dataset)  # "politifact"
 
 ---
 
+## FactCheckDataset
+
+Implements `BaseDataset` directly, like `AVeriTecDataset`/`PolitiFactDataset`.
+Loads only `verdict == "true"` records from `<split>.jsonl` files (default:
+`data/factcheck/<split>.jsonl`). No evidence Q&A documented for this
+source, so `context_query` is a templated fallback, same as
+`PolitiFactDataset` — no LLM required. Registry name is `"factcheck_org"`
+(not `"factcheck"`, matching `docs/DATASETS.md` section 5's own usage
+example) even though the module/class are named `factcheck.py`/
+`FactCheckDataset`.
+
+See `eiger/datasets/factcheck.py`'s module docstring and
+`docs/DATASETS.md` Section 5 for the full field mapping and an important
+caveat: the raw file format is *assumed* to be JSONL, since section 5
+never explicitly specified one (unlike PolitiFact's documented TSV or
+AVeriTeC's documented JSONL) — this may need revisiting once the real
+CheckThat! mirror is downloaded.
+
+`download()` is a **guard, not a fetcher**, same as the other two
+implemented-loader-only datasets.
+
+```python
+from eiger.datasets import get_dataset
+
+dataset = get_dataset("factcheck_org")  # defaults to data/factcheck/
+dataset.download(target_dir="data/factcheck")  # raises if files are missing
+claims = dataset.load(split="test", max_claims=50)
+print(claims[0].source_dataset)  # "factcheck_org"
+```
+
+---
+
 ## Adding a new dataset loader
 
 1. Implement a `BaseDataset` subclass in a new module under `eiger/datasets/`
@@ -225,8 +259,9 @@ print(claims[0].source_dataset)  # "politifact"
 3. Reference it by name in a `DatasetConfig.name` (YAML or code).
 4. Verify with `list_datasets()` and `get_dataset(name)`.
 
-See `docs/DATASETS.md` for the full spec (expected raw format, download
-instructions) of the still-planned FactCheck.org loader.
+All five datasets documented in `docs/DATASETS.md` now have implemented
+loaders; see that document for their full specs and the (mostly
+completed) roadmap.
 
 ---
 

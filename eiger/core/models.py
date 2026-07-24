@@ -365,7 +365,7 @@ class DatasetConfig(BaseModel):
     name: str = Field(
         description=(
             "Dataset identifier, must be registered in eiger.datasets — "
-            "implemented: json_fixture | snopes | averitec; planned: politifact | factcheck"
+            "implemented: json_fixture | snopes | averitec | politifact | factcheck_org"
         )
     )
     split: str = Field(default="test")

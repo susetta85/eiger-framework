@@ -39,7 +39,7 @@ Fact-checking corpora — originally created for automated claim verification re
 | Snopes | English | 4,832 verified-true claims (of 19,631 raw) | Multi-domain | Research use | **Implemented** (Sprint 3) |
 | AVeriTeC | English | 4,500 claims (Supported-label subset) | Multi-domain | CC BY 4.0 | **Implemented** (loader only — see Section 3; automated download() still pending) |
 | PolitiFact | English | 21,000+ claims (12,800 in base LIAR; "true"-label subset used) | US Politics | Research use | **Implemented** (loader only — see Section 4; automated download() still pending) |
-| FactCheck.org | English | ~3,000 claims | Multi-domain | Research use | Planned |
+| FactCheck.org | English | ~3,000 claims ("true"-verdict subset used) | Multi-domain | Research use | **Implemented** (loader only — see Section 5; automated download() still pending) |
 | JSON Fixture | Italian (demo) | 1 claim | Economics | Internal | Implemented (Sprint 1) |
 
 ---
@@ -198,6 +198,12 @@ claims = dataset.load(split="test", max_claims=200)
 
 FactCheck.org is a non-partisan US fact-checking organization. Their public corpus covers political and scientific claims with detailed rebuttals, primary source citations, and structured verdicts. The corpus is smaller than PolitiFact but has higher editorial depth per claim, making it useful for studying complex multi-hop poisoning scenarios.
 
+**Status: `FactCheckDataset` (registry name `"factcheck_org"`) is implemented** — `eiger/datasets/factcheck.py`, 25 unit tests (`tests/unit/test_factcheck.py`). As with AVeriTeC/PolitiFact, only `download()` remains a manual/guard step.
+
+Only `verdict == "true"` records are loaded, matching every other loader's verified-true-only philosophy (Section 1's Overview): `Claim.original_fact` must be a verified TRUE statement. Like PolitiFact, there is no evidence Q&A documented for this source, so `context_query` is a templated fallback (`"Is it true that {claim}?"`) — no LLM enrichment required.
+
+**Format caveat:** unlike PolitiFact (explicitly TSV) or AVeriTeC (explicitly JSONL), this section does not specify a concrete raw file format for the CheckThat! mirror below — only the field table. `FactCheckDataset` assumes **JSON Lines** (one JSON object per line, matching AVeriTeC's format), since that's the most natural fit for the flat record shape below. This is an unverified assumption; if the real downloaded mirror uses a different format, only the loader's parsing method needs to change.
+
 ### Download
 
 FactCheck.org does not offer a bulk download API. The EIGER loader scrapes the public search endpoint or uses a pre-processed mirror:
@@ -212,6 +218,8 @@ wget https://gitlab.com/checkthat_lab/clef2021-checkthat-lab/-/archive/main/data
 unzip /tmp/checkthat.zip "*/task1*" -d data/factcheck/
 ```
 
+Split files are expected at `data/factcheck/<split>.jsonl` — `load(split=...)` selects the file by exact name.
+
 ### Expected Format
 
 | Field | Type | Description |
@@ -222,12 +230,23 @@ unzip /tmp/checkthat.zip "*/task1*" -d data/factcheck/
 | `article_url` | `str` | Link to the full fact-check article |
 | `date` | `str` | Publication date |
 
+Field mapping to `Claim`:
+
+| Raw field | Maps to |
+|---|---|
+| `claim` | `Claim.original_fact` |
+| *(templated)* | `Claim.context_query` — `f"Is it true that {claim}?"` |
+| `claim_id` | `Claim.claim_id` — `f"FACTCHECK_{claim_id}"` |
+| `verdict`, `article_url`, `date` (each if present) | `Claim.metadata["verdict"/"article_url"/"date"]` |
+| *(always)* | `Claim.metadata["verified"] = False` |
+
 ### Loading with EIGER
 
 ```python
 from eiger.datasets import get_dataset
 
 dataset = get_dataset("factcheck_org")
+dataset.download(target_dir="data/factcheck")  # guard: raises if files are missing
 claims = dataset.load(split="test", max_claims=50)
 ```
 
@@ -322,7 +341,7 @@ The `adversarial_variants` dict is preserved in `Claim.metadata` for inspection 
 
 ### Description
 
-Unlike AVeriTeC/PolitiFact/FactCheck.org above (still planned, Section 11), Snopes is **implemented**: `eiger/datasets/snopes.py`'s `SnopesDataset` (registry name `"snopes"`) loads it via the same JSON schema as the JSON Fixture (Section 7), inherited by subclassing `JSONFixtureDataset`.
+Like AVeriTeC/PolitiFact/FactCheck.org above (also implemented, Sections 3-5), Snopes is **implemented**: `eiger/datasets/snopes.py`'s `SnopesDataset` (registry name `"snopes"`) loads it via the same JSON schema as the JSON Fixture (Section 7), inherited by subclassing `JSONFixtureDataset`. Unlike those three, Snopes' `context_query` requires a separate LLM-enrichment step (`scripts/enrich_snopes_claims.py`) rather than a templated fallback or documented evidence field — see below.
 
 The raw source is a 19,631-row export of Snopes fact-checks (1995-2025) with a `normalised_rating` per claim (`True`: 4,832 · `False`: 11,872 · `partially true`: 2,335 · `misleading`: 451 · `unverifiable`: 141) and a real source `url` per row — verifiable, unlike the bare `id`/`claim`/`date` PolitiFact export the team also has on hand (see Section 4; that export has no per-row source link).
 
@@ -517,9 +536,9 @@ print(f"Content hash: {ds.content_hash}")
 | Snopes (English, 4,832 verified-true claims) | Sprint 3 | **Implemented.** `SnopesDataset` + `scripts/enrich_snopes_claims.py` (filter/dedupe/LLM-generated context_query). Not yet independently reviewed by the research team — see Section 8. |
 | AVeriTeC (English, ~4,500 claims, Supported-label subset) | Sprint 2 | **Implemented (loader only).** `AVeriTecDataset` — parsing/filtering/`Claim` construction fully implemented and unit-tested (Section 3). `download()` is a guard, not a fetcher: automated fetching (the optional HuggingFace `datasets` library + network access) and DVC tracking are still outstanding. Not yet independently reviewed by the research team. |
 | PolitiFact via LIAR (English, ~12,800 claims, "true"-label subset) | Sprint 3 | **Implemented (loader only).** `PolitiFactDataset` — parsing/filtering/`Claim` construction fully implemented and unit-tested (Section 4). `download()` is a guard, not a fetcher. Not yet independently reviewed. Note: the team also has a bulk PolitiFact export on hand (`politifact_true.csv`/`politifact_false.csv`, id/claim/date only, no source URL) — not used by this loader, which targets the standard LIAR TSV format instead; the team's export remains a lower-priority alternative source due to the missing per-row source link and minor non-English contamination in the false subset. |
-| FactCheck.org via CheckThat! (English, ~3,000 claims) | Sprint 4 | Planned. Multi-domain expansion. Note: the team also has a 50-row bulk-extracted `factcheck_false.csv`, every row explicitly flagged `needs_manual_check: True` — candidate FALSE claims requiring manual review, not a source of `Claim.original_fact` ground truth. |
+| FactCheck.org via CheckThat! (English, ~3,000 claims, "true"-verdict subset) | Sprint 4 | **Implemented (loader only).** `FactCheckDataset` — parsing/filtering/`Claim` construction fully implemented and unit-tested (Section 5). `download()` is a guard, not a fetcher. Raw file format (assumed JSONL) not independently re-verified — see Section 5's format caveat. Not yet independently reviewed. Note: the team also has a 50-row bulk-extracted `factcheck_false.csv`, every row explicitly flagged `needs_manual_check: True` — candidate FALSE claims requiring manual review, not a source of `Claim.original_fact` ground truth, and not used by this loader. |
 | Multi-lingual extension (Italian, French, German) | Sprint 5 | Planned. Cross-lingual epistemic robustness. |
 
-Note: the "Sprint" column above is this document's own dataset-specific roadmap numbering, established during Sprint 1 planning, and does not necessarily align 1:1 with the project's actual sprint cadence (e.g. the retrieval/generation/orchestration layer built in the project's own "Sprint 2" did not touch datasets at all). The `eiger.datasets` registry and `JSONFixtureDataset` described in Sections 6-7, `SnopesDataset` described in Section 8, `AVeriTecDataset` described in Section 3, and `PolitiFactDataset` described in Section 4 were all implemented during the project's Sprint 3.
+Note: the "Sprint" column above is this document's own dataset-specific roadmap numbering, established during Sprint 1 planning, and does not necessarily align 1:1 with the project's actual sprint cadence (e.g. the retrieval/generation/orchestration layer built in the project's own "Sprint 2" did not touch datasets at all). The `eiger.datasets` registry and `JSONFixtureDataset` described in Sections 6-7, `SnopesDataset` described in Section 8, `AVeriTecDataset` described in Section 3, `PolitiFactDataset` described in Section 4, and `FactCheckDataset` described in Section 5 were all implemented during the project's Sprint 3. All five datasets originally planned in this roadmap now have implemented loaders; multi-lingual extension (Sprint 5) is the only remaining planned item.
 
-The JSON fixture will remain in the repository indefinitely as the canonical fast-test dataset. All CI pipelines run against the fixture (and, once independently reviewed, Snopes, AVeriTeC, and PolitiFact) only; full-scale experiments against AVeriTeC and PolitiFact are run on the research compute cluster and results are archived under `experiments/`.
+The JSON fixture will remain in the repository indefinitely as the canonical fast-test dataset. All CI pipelines run against the fixture (and, once independently reviewed, Snopes, AVeriTeC, PolitiFact, and FactCheck.org) only; full-scale experiments against the real corpora are run on the research compute cluster and results are archived under `experiments/`.

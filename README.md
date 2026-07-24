@@ -4,7 +4,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-411%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-436%20passing-brightgreen.svg)](tests/)
 [![Sprint](https://img.shields.io/badge/sprint-3%20in%20progress-blue.svg)](docs/ARCHITECTURE.md)
 
 ---
@@ -94,7 +94,8 @@ EIBench is a six-layer pipeline. Each layer is independently extensible via a pl
 | 9 | `SnopesDataset` (4,832 verified-true claims) + `scripts/enrich_snopes_claims.py` (filter/dedupe/LLM context_query) | ✅ Sprint 3 — not yet independently reviewed, see `docs/DATASETS.md` §8 |
 | 10 | `AVeriTecDataset` (Supported-label subset, evidence-question context_query — no LLM needed) | ✅ Sprint 3 — loader only, `download()` is a guard not a fetcher; not yet independently reviewed, see `docs/DATASETS.md` §3 |
 | 11 | `PolitiFactDataset` (LIAR "true"-label subset, templated context_query — no LLM needed) | ✅ Sprint 3 — loader only, `download()` is a guard not a fetcher; not yet independently reviewed, see `docs/DATASETS.md` §4 |
-| — | FactCheck.org loader, sparse/hybrid retrieval, OpenAI LLM backend, real RAGAS-based faithfulness scorer, degradation curves / HTML report | 🔄 Future sprints |
+| 12 | `FactCheckDataset` (CheckThat! mirror, "true"-verdict subset, templated context_query — no LLM needed) | ✅ Sprint 3 — loader only, `download()` is a guard not a fetcher, raw format assumed JSONL (not independently verified); not yet independently reviewed, see `docs/DATASETS.md` §5 |
+| — | Sparse/hybrid retrieval, OpenAI LLM backend, real RAGAS-based faithfulness scorer, degradation curves / HTML report | 🔄 Future sprints |
 
 ---
 
@@ -275,7 +276,7 @@ eiger-framework/
 │   └── utils/                # Logging, seeding, hashing
 │
 ├── tests/
-│   ├── unit/                 # Fast, no external services (409 tests, 100% coverage)
+│   ├── unit/                 # Fast, no external services (434 tests, 100% coverage)
 │   └── integration/          # Requires docker compose up
 │
 ├── experiments/              # YAML experiment definitions

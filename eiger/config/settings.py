@@ -76,8 +76,15 @@ class EigerSettings(BaseSettings):
 
     # ─── LLM backend ──────────────────────────────────────────────────────
 
-    # Ollama runs locally at localhost:11434 by default; no API key needed.
-    ollama_host: str = Field(default="localhost")
+    # Ollama runs locally at 11434 by default; no API key needed. Uses the
+    # literal IPv4 loopback address ("127.0.0.1"), not "localhost", because
+    # some systems resolve "localhost" to the IPv6 loopback (::1) first,
+    # and Ollama (or the native install's systemd unit) may only be
+    # listening on IPv4 — see eiger/llm/ollama.py's DEFAULT_HOST comment
+    # for the same rationale. This is the value actually used by the CLI
+    # (eiger/__main__.py passes settings.ollama_host explicitly to
+    # OllamaLLM), so it must match ollama.py's own default to be effective.
+    ollama_host: str = Field(default="127.0.0.1")
     ollama_port: int = Field(default=11434)
 
     # ─── Embedding model ──────────────────────────────────────────────────
@@ -121,7 +128,7 @@ class EigerSettings(BaseSettings):
         Fully-qualified HTTP URL for the Ollama API.
 
         Returns:
-            str: e.g. "http://localhost:11434"
+            str: e.g. "http://127.0.0.1:11434"
         """
         return f"http://{self.ollama_host}:{self.ollama_port}"
 

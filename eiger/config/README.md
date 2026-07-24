@@ -12,7 +12,7 @@ environment variables, a `.env` file, and built-in defaults — in that order of
 |-------------------------------|---------------------|------------------------------------------------|-------------------------------------------------|
 | `EIGER_QDRANT_HOST`           | `qdrant_host`       | `localhost`                                    | Hostname of the Qdrant vector-store server      |
 | `EIGER_QDRANT_PORT`           | `qdrant_port`       | `6333`                                         | Port of the Qdrant vector-store server          |
-| `EIGER_OLLAMA_HOST`           | `ollama_host`       | `localhost`                                    | Hostname of the Ollama inference server         |
+| `EIGER_OLLAMA_HOST`           | `ollama_host`       | `127.0.0.1`                                    | Hostname of the Ollama inference server (IPv4 loopback literal, not "localhost" — avoids IPv6-resolution issues; see `eiger/llm/ollama.py`) |
 | `EIGER_OLLAMA_PORT`           | `ollama_port`       | `11434`                                        | Port of the Ollama inference server             |
 | `EIGER_DEFAULT_EMBEDDER`      | `default_embedder`  | `sentence-transformers/all-MiniLM-L6-v2`       | Model identifier for the default embedder       |
 | `EIGER_RESULTS_DIR`           | `results_dir`       | `results/`                                     | Directory where experiment results are written  |
@@ -45,7 +45,7 @@ from eiger.config.settings import get_settings
 
 settings = get_settings()
 print(settings.qdrant_url)    # http://localhost:6333
-print(settings.ollama_url)    # http://localhost:11434
+print(settings.ollama_url)    # http://127.0.0.1:11434
 print(settings.default_seed)  # 42
 ```
 
@@ -74,7 +74,7 @@ invoked). See `.env.example` at the repository root for a template covering all 
 ```
 EIGER_QDRANT_HOST=localhost
 EIGER_QDRANT_PORT=6333
-EIGER_OLLAMA_HOST=localhost
+EIGER_OLLAMA_HOST=127.0.0.1
 EIGER_OLLAMA_PORT=11434
 EIGER_DEFAULT_EMBEDDER=sentence-transformers/all-MiniLM-L6-v2
 EIGER_RESULTS_DIR=results/

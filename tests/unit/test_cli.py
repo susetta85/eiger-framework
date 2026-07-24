@@ -186,7 +186,7 @@ class TestBuildRunner:
             mock_store_cls.assert_called_once()
             mock_llm_cls.assert_called_once_with(
                 model_name=config.llm.model,
-                host="localhost",
+                host="127.0.0.1",
                 port=11434,
                 temperature=config.llm.temperature,
                 max_tokens=config.llm.max_tokens,

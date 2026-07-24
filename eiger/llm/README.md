@@ -27,7 +27,7 @@ from eiger.llm import OllamaLLM
 
 llm = OllamaLLM(
     model_name="llama3.1:8b",
-    host="localhost",
+    host="127.0.0.1",  # default — see DEFAULT_HOST's comment for why not "localhost"
     port=11434,
     temperature=0.0,   # deterministic — required for reproducible experiments
     max_tokens=512,

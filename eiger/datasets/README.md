@@ -1,9 +1,10 @@
 # eiger.datasets
 
-Status: **Sprint 3** — the registry and two concrete loaders,
-`JSONFixtureDataset` and `SnopesDataset`, are implemented and tested.
-AVeriTeC, PolitiFact, and FactCheck.org loaders are still planned (see
-`docs/DATASETS.md` for their full specs and the roadmap).
+Status: **Sprint 3** — the registry and three concrete loaders,
+`JSONFixtureDataset`, `SnopesDataset`, and `AVeriTecDataset`, are
+implemented and tested. `AVeriTecDataset.download()` is a guard, not a
+real fetcher (see below). PolitiFact and FactCheck.org loaders are still
+planned (see `docs/DATASETS.md` for their full specs and the roadmap).
 
 ---
 
@@ -14,7 +15,7 @@ AVeriTeC, PolitiFact, and FactCheck.org loaders are still planned (see
 | `registry.py`    | —                    | `register_dataset`/`get_dataset`/`list_datasets` | Implemented |
 | `json_fixture.py`| `JSONFixtureDataset` | `eibench_raw_claims.json`      | Implemented |
 | `snopes.py`      | `SnopesDataset`      | LLM-enriched Snopes export (`scripts/enrich_snopes_claims.py`) | Implemented |
-| `averitec.py`    | `AVeriTeCDataset`    | HuggingFace `datasets` library | Planned     |
+| `averitec.py`    | `AVeriTecDataset`    | AVeriTeC `*.jsonl` splits (manual download — see `docs/DATASETS.md` §3) | Implemented (loader only; `download()` is a guard) |
 | `politifact.py`  | `PolitiFactDataset`  | LIAR TSV                       | Planned     |
 | `factcheck.py`   | `FactCheckDataset`   | CheckThat! corpus              | Planned     |
 
@@ -55,7 +56,7 @@ Mirrors `eiger.attacks.registry` / `eiger.metrics.registry` exactly:
 ```python
 from eiger.datasets import get_dataset, list_datasets, register_dataset
 
-list_datasets()          # -> ["json_fixture"]
+list_datasets()          # -> ["averitec", "json_fixture", "snopes"]
 dataset = get_dataset("json_fixture")  # fresh JSONFixtureDataset() instance
 ```
 
@@ -154,6 +155,35 @@ print(claims[0].source_dataset)  # "snopes"
 
 ---
 
+## AVeriTecDataset
+
+Implements `BaseDataset` directly (does not subclass `JSONFixtureDataset`
+— the raw format is JSONL, not a JSON array). Loads only
+`label == "Supported"` records from AVeriTeC's own `<split>.jsonl` files
+(default: `data/averitec/<split>.jsonl`), using each record's first
+evidence question as `context_query` directly — no LLM enrichment step
+needed, unlike Snopes. See `eiger/datasets/averitec.py`'s module docstring
+and `docs/DATASETS.md` Section 3 for the full field mapping and rationale.
+
+`download()` is a **guard, not a fetcher**: it no-ops if `*.jsonl` files
+already exist under the target directory, and otherwise raises
+`IngestionError` pointing at the manual download steps in
+`docs/DATASETS.md` §3 (fetching requires the optional HuggingFace
+`datasets` library and network access, deliberately not added as a core
+dependency yet).
+
+```python
+from eiger.datasets import get_dataset
+
+dataset = get_dataset("averitec")  # defaults to data/averitec/
+dataset.download(target_dir="data/averitec")  # raises if files are missing
+claims = dataset.load(split="test", max_claims=100)
+print(claims[0].source_dataset)  # "averitec"
+print(claims[0].metadata.get("evidence_urls"))  # real source URLs, if any
+```
+
+---
+
 ## Adding a new dataset loader
 
 1. Implement a `BaseDataset` subclass in a new module under `eiger/datasets/`
@@ -164,8 +194,7 @@ print(claims[0].source_dataset)  # "snopes"
 4. Verify with `list_datasets()` and `get_dataset(name)`.
 
 See `docs/DATASETS.md` for the full specs (expected raw formats, download
-instructions) of the still-planned AVeriTeC, PolitiFact, and FactCheck.org
-loaders.
+instructions) of the still-planned PolitiFact and FactCheck.org loaders.
 
 ---
 
@@ -174,7 +203,8 @@ loaders.
 `scripts/import_claims_xlsx.py` converts a filled-in spreadsheet
 (`eiger_claims_template.xlsx`) into an **unverified candidate** JSON file
 — never directly into `eibench_raw_claims.json`. See `scripts/README.md`
-for the full collect → convert → verify → promote workflow, and its
-documented limitation (promotion currently drops the candidate's
-`source`/`domain`/`notes`/`verified` fields, since `JSONFixtureDataset`
-only preserves `adversarial_variants` in `Claim.metadata` today).
+for the full collect → convert → verify → promote workflow. A candidate's
+`source`/`domain`/`notes`/`verified` fields survive promotion unchanged:
+`JSONFixtureDataset._to_claim()` carries each into `Claim.metadata` when
+present (see the field-mapping table above) — a previously-documented
+limitation, fixed in Sprint 3.

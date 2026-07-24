@@ -362,7 +362,12 @@ class ExperimentConfig(BaseModel):
 class DatasetConfig(BaseModel):
     """Configuration for the source dataset to load claims from."""
 
-    name: str = Field(description="Dataset identifier: averitec | politifact | json_fixture")
+    name: str = Field(
+        description=(
+            "Dataset identifier, must be registered in eiger.datasets — "
+            "implemented: json_fixture | snopes | averitec; planned: politifact | factcheck"
+        )
+    )
     split: str = Field(default="test")
     # None means load all available claims — useful for full benchmark runs.
     max_claims: int | None = Field(default=None, description="Cap number of claims (None = all)")

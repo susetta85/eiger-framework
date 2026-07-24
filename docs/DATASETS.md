@@ -37,7 +37,7 @@ Fact-checking corpora — originally created for automated claim verification re
 | Name | Language | Approx. Size | Domain | License | Status |
 |---|---|---|---|---|---|
 | Snopes | English | 4,832 verified-true claims (of 19,631 raw) | Multi-domain | Research use | **Implemented** (Sprint 3) |
-| AVeriTeC | English | 4,500 claims | Multi-domain | CC BY 4.0 | Planned |
+| AVeriTeC | English | 4,500 claims (Supported-label subset) | Multi-domain | CC BY 4.0 | **Implemented** (loader only — see Section 3; automated download() still pending) |
 | PolitiFact | English | 21,000+ claims | US Politics | Research use | Planned |
 | FactCheck.org | English | ~3,000 claims | Multi-domain | Research use | Planned |
 | JSON Fixture | Italian (demo) | 1 claim | Economics | Internal | Implemented (Sprint 1) |
@@ -52,7 +52,13 @@ AVeriTeC (Automated Verification of Textual Claims over Evidence) is a benchmark
 
 The dataset was introduced at NeurIPS 2023 and contains approximately 4,500 claims spanning politics, science, health, and economics. Evidence is linked to web sources, making the retrieval context realistic.
 
+**Status: `AVeriTecDataset` (registry name `"averitec"`) is implemented** — `eiger/datasets/averitec.py`, 26 unit tests (`tests/unit/test_averitec.py`). Only the `download()` step remains a manual/guard step rather than a real fetcher (see below); parsing, filtering, and `Claim` construction are fully implemented and tested.
+
+Only `label == "Supported"` records are loaded, mirroring Snopes' `normalised_rating == True` filter: `Claim.original_fact` must be a verified TRUE statement (EIGER generates its own falsehoods via the attack registry, it does not import externally-sourced false claims as ground truth). Unlike Snopes, no LLM enrichment step is needed: each record's `evidence` list already contains real question/answer/url triples from AVeriTeC's own human annotators, so the loader uses the first evidence question directly as `Claim.context_query`. As with Snopes, claims are tagged `metadata["verified"] = False` until the research team independently spot-checks a sample.
+
 ### Download
+
+`AVeriTecDataset.download()` does **not** fetch the data automatically — it only *guards*: it no-ops if `*.jsonl` files already exist under the target directory, and otherwise raises a clear `IngestionError` pointing back to this section. Automated fetching would require adding the optional HuggingFace `datasets` library plus network access as a new runtime dependency, which is deliberately deferred (same rationale documented in `eiger/datasets/json_fixture.py` for why AVeriTeC wasn't the first loader built). Until then, download manually:
 
 ```bash
 # Create the data directory
@@ -74,6 +80,8 @@ git clone https://github.com/Raldir/AVeriTeC.git /tmp/averitec_repo
 cp /tmp/averitec_repo/data/*.json data/averitec/
 ```
 
+Split files are expected at `data/averitec/<split>.jsonl` (e.g. `test.jsonl`, `dev.jsonl`, `train.jsonl`) — `load(split=...)` selects the file by exact name.
+
 ### Expected Format
 
 AVeriTeC JSONL records contain the following fields relevant to EIGER:
@@ -86,15 +94,25 @@ AVeriTeC JSONL records contain the following fields relevant to EIGER:
 | `claim_date` | `str` | Date the claim was made (ISO format) |
 | `speaker` | `str` | Entity who made the claim |
 
+Field mapping to `Claim` (see `eiger/datasets/averitec.py`'s docstring for the full rationale):
+
+| Raw field | Maps to |
+|---|---|
+| `claim` | `Claim.original_fact` |
+| `evidence[0]["question"]` (or a templated fallback if no evidence) | `Claim.context_query` |
+| *(constructed, see below)* | `Claim.claim_id` — `f"AVERITEC_{index:05d}"`, where `index` is the record's zero-based position in the raw split file (assigned before the Supported-only filter, so IDs stay stable across filter changes) |
+| `label`, `claim_date`, `speaker`, `evidence[*]["url"]` (each if present) | `Claim.metadata["label"/"claim_date"/"speaker"/"evidence_urls"]` |
+| *(always)* | `Claim.metadata["verified"] = False` |
+
 ### Loading with EIGER
 
 ```python
 from eiger.datasets import get_dataset
 
 # The AVeriTeC loader maps 'claim' -> Claim.original_fact
-# and constructs a context_query from the claim text.
+# and uses the first evidence question as context_query.
 dataset = get_dataset("averitec")
-dataset.download(target_dir="data/averitec")
+dataset.download(target_dir="data/averitec")  # guard: raises if files are missing
 claims = dataset.load(split="test", max_claims=100)
 
 print(f"Loaded {len(claims)} claims")
@@ -206,7 +224,7 @@ The JSON fixture is a lightweight, self-contained dataset bundled with the EIGER
 - Development and debugging of the poisoning engine
 - CI pipeline validation
 
-The fixture currently contains one claim in Italian, demonstrating the multi-lingual capability of the framework and reflecting the research team's initial prototype. English claims are now available via `SnopesDataset` (Section 8, implemented) and will be further expanded once the `AVeriTeCDataset` loader (still planned — see Section 11) is implemented.
+The fixture currently contains one claim in Italian, demonstrating the multi-lingual capability of the framework and reflecting the research team's initial prototype. English claims are now available via `SnopesDataset` (Section 8) and `AVeriTecDataset` (Section 3), both implemented.
 
 ### Location
 
@@ -478,11 +496,11 @@ print(f"Content hash: {ds.content_hash}")
 |---|---|---|
 | JSON Fixture (1 claim, Italian) | Sprint 1 | **Implemented.** `JSONFixtureDataset` + the `eiger.datasets` registry. Used for all unit and integration tests. |
 | Snopes (English, 4,832 verified-true claims) | Sprint 3 | **Implemented.** `SnopesDataset` + `scripts/enrich_snopes_claims.py` (filter/dedupe/LLM-generated context_query). Not yet independently reviewed by the research team — see Section 8. |
-| AVeriTeC (English, ~4,500 claims) | Sprint 2 | Planned. Primary research corpus. Loader implementation + DVC tracking. |
+| AVeriTeC (English, ~4,500 claims, Supported-label subset) | Sprint 2 | **Implemented (loader only).** `AVeriTecDataset` — parsing/filtering/`Claim` construction fully implemented and unit-tested (Section 3). `download()` is a guard, not a fetcher: automated fetching (the optional HuggingFace `datasets` library + network access) and DVC tracking are still outstanding. Not yet independently reviewed by the research team. |
 | PolitiFact via LIAR (English, ~12,800 claims) | Sprint 3 | Planned. Political domain expansion. Note: the team also has a bulk PolitiFact export on hand (`politifact_true.csv`/`politifact_false.csv`, id/claim/date only, no source URL) — lower priority than Snopes due to the missing per-row source link and minor non-English contamination in the false subset. |
 | FactCheck.org via CheckThat! (English, ~3,000 claims) | Sprint 4 | Planned. Multi-domain expansion. Note: the team also has a 50-row bulk-extracted `factcheck_false.csv`, every row explicitly flagged `needs_manual_check: True` — candidate FALSE claims requiring manual review, not a source of `Claim.original_fact` ground truth. |
 | Multi-lingual extension (Italian, French, German) | Sprint 5 | Planned. Cross-lingual epistemic robustness. |
 
-Note: the "Sprint" column above is this document's own dataset-specific roadmap numbering, established during Sprint 1 planning, and does not necessarily align 1:1 with the project's actual sprint cadence (e.g. the retrieval/generation/orchestration layer built in the project's own "Sprint 2" did not touch datasets at all). The `eiger.datasets` registry and `JSONFixtureDataset` described in Sections 6-7, and `SnopesDataset` described in Section 8, were all implemented during the project's Sprint 3.
+Note: the "Sprint" column above is this document's own dataset-specific roadmap numbering, established during Sprint 1 planning, and does not necessarily align 1:1 with the project's actual sprint cadence (e.g. the retrieval/generation/orchestration layer built in the project's own "Sprint 2" did not touch datasets at all). The `eiger.datasets` registry and `JSONFixtureDataset` described in Sections 6-7, `SnopesDataset` described in Section 8, and `AVeriTecDataset` described in Section 3 were all implemented during the project's Sprint 3.
 
-The JSON fixture will remain in the repository indefinitely as the canonical fast-test dataset. All CI pipelines run against the fixture (and, once independently reviewed, Snopes) only; full-scale experiments against AVeriTeC and PolitiFact are run on the research compute cluster and results are archived under `experiments/`.
+The JSON fixture will remain in the repository indefinitely as the canonical fast-test dataset. All CI pipelines run against the fixture (and, once independently reviewed, Snopes and AVeriTeC) only; full-scale experiments against AVeriTeC and PolitiFact are run on the research compute cluster and results are archived under `experiments/`.

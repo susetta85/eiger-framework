@@ -4,8 +4,8 @@
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-297%20passing-brightgreen.svg)](tests/)
-[![Sprint](https://img.shields.io/badge/sprint-2%20complete-blue.svg)](docs/ARCHITECTURE.md)
+[![Tests](https://img.shields.io/badge/tests-386%20passing-brightgreen.svg)](tests/)
+[![Sprint](https://img.shields.io/badge/sprint-3%20in%20progress-blue.svg)](docs/ARCHITECTURE.md)
 
 ---
 
@@ -92,7 +92,8 @@ EIBench is a six-layer pipeline. Each layer is independently extensible via a pl
 | 7 | Dataset registry + `JSONFixtureDataset` loader | ✅ Sprint 3 |
 | 8 | `eiger` CLI (`run`/`list-datasets`/`list-attacks`/`list-metrics`) | ✅ Sprint 3 |
 | 9 | `SnopesDataset` (4,832 verified-true claims) + `scripts/enrich_snopes_claims.py` (filter/dedupe/LLM context_query) | ✅ Sprint 3 — not yet independently reviewed, see `docs/DATASETS.md` §8 |
-| — | AVeriTeC/PolitiFact/FactCheck.org loaders, sparse/hybrid retrieval, OpenAI LLM backend, real RAGAS-based faithfulness scorer, degradation curves / HTML report | 🔄 Future sprints |
+| 10 | `AVeriTecDataset` (Supported-label subset, evidence-question context_query — no LLM needed) | ✅ Sprint 3 — loader only, `download()` is a guard not a fetcher; not yet independently reviewed, see `docs/DATASETS.md` §3 |
+| — | PolitiFact/FactCheck.org loaders, sparse/hybrid retrieval, OpenAI LLM backend, real RAGAS-based faithfulness scorer, degradation curves / HTML report | 🔄 Future sprints |
 
 ---
 
@@ -273,7 +274,7 @@ eiger-framework/
 │   └── utils/                # Logging, seeding, hashing
 │
 ├── tests/
-│   ├── unit/                 # Fast, no external services (358 tests, 100% coverage)
+│   ├── unit/                 # Fast, no external services (384 tests, 100% coverage)
 │   └── integration/          # Requires docker compose up
 │
 ├── experiments/              # YAML experiment definitions

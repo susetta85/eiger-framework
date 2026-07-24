@@ -147,7 +147,7 @@ class OllamaLLM(BaseLLM):
         Fully-qualified HTTP base URL for the Ollama server.
 
         Returns:
-            str: e.g. "http://localhost:11434"
+            str: e.g. "http://127.0.0.1:11434"
         """
         return f"http://{self.host}:{self.port}"
 

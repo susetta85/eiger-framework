@@ -35,9 +35,14 @@ class TestEigerSettingsDefaults:
         assert s.qdrant_port == 6333
 
     def test_default_ollama_host(self) -> None:
-        """ollama_host must default to 'localhost'."""
+        """
+        ollama_host must default to the literal IPv4 loopback '127.0.0.1',
+        not 'localhost' — some systems resolve 'localhost' to the IPv6
+        loopback first, and Ollama may only listen on IPv4 (see
+        eiger/llm/ollama.py's DEFAULT_HOST comment for the same rationale).
+        """
         s = EigerSettings()
-        assert s.ollama_host == "localhost"
+        assert s.ollama_host == "127.0.0.1"
 
     def test_default_ollama_port(self) -> None:
         """ollama_port must default to 11434 (Ollama's default port)."""
@@ -76,7 +81,7 @@ class TestEigerSettingsURLProperties:
     def test_ollama_url_default(self) -> None:
         """ollama_url must combine ollama_host and ollama_port into an HTTP URL."""
         s = EigerSettings()
-        assert s.ollama_url == "http://localhost:11434"
+        assert s.ollama_url == "http://127.0.0.1:11434"
 
     def test_ollama_url_custom(self) -> None:
         """ollama_url must reflect overridden host and port values."""

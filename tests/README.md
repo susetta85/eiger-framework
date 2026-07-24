@@ -28,7 +28,7 @@ pytest tests/ --cov=eiger --cov-report=term-missing
 
 | Suite       | Location            | Count | Speed  | External Services |
 |-------------|---------------------|-------|--------|--------------------|
-| Unit        | `tests/unit/`       | 358   | Fast   | None               |
+| Unit        | `tests/unit/`       | 384   | Fast   | None               |
 | Integration | `tests/integration/`| 3     | Fast–Slow | None required (see below) |
 
 Integration tests are split into two files with different infrastructure
@@ -143,12 +143,14 @@ Sprint 3 added the dataset layer:
 | `test_datasets.py` | 30 | Dataset registry (`register_dataset`/`get_dataset`/`list_datasets`, `DatasetNotFoundError`) and `JSONFixtureDataset`: field mapping, `max_claims`/`split` handling, `download()` no-op, `content_hash` before/after load, error paths (missing file, invalid JSON, non-list top-level, missing required field), and the optional `source`/`domain`/`notes`/`verified` provenance passthrough |
 | `test_cli.py` | 22 | `eiger.__main__` (the `eiger` CLI): YAML config loading/validation, the component factory (`_build_dataset`/`_build_runner` — unsupported retriever/vector_store/llm backend values, correct component wiring), `run`/`list-datasets`/`list-attacks`/`list-metrics` subcommands, and `main()`'s dispatch + `EigerError`/`ImportError` → exit-code-1 handling |
 | `test_snopes.py` | 9 | `SnopesDataset`: identity/default path/registration, `source_dataset` correctly reporting `"snopes"` (the one behavior its `JSONFixtureDataset` parent couldn't provide unmodified), provenance passthrough, `download()` no-op |
+| `test_averitec.py` | 26 | `AVeriTecDataset` (implements `BaseDataset` directly — JSONL format, not JSON-array): `Supported`-label filtering, evidence-question-as-`context_query` (with templated fallback), claim_id stability under filtering, optional metadata passthrough (`claim_date`/`speaker`/`evidence_urls`), `split` file selection, `content_hash`, error paths (missing/invalid/non-object JSONL lines, missing `claim` field), and `download()`'s guard behavior (no-op if data present, `IngestionError` if not) |
 
 Follows the same module-level `log`-patching convention described above
 (patches `eiger.datasets.json_fixture.log` and, for `test_cli.py`,
 `eiger.__main__.log` plus `eiger.experiments.runner.log`; for
 `test_snopes.py`, both `eiger.datasets.json_fixture.log` and
-`eiger.datasets.snopes.log`).
+`eiger.datasets.snopes.log`; for `test_averitec.py`,
+`eiger.datasets.averitec.log`).
 
 ---
 

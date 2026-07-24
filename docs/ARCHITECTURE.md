@@ -8,15 +8,16 @@
 ## Table of Contents
 
 1. [Overview](#1-overview)
-2. [Six-Layer Pipeline](#2-six-layer-pipeline)
-3. [Module Dependency Graph](#3-module-dependency-graph)
-4. [Domain Model](#4-domain-model)
-5. [Abstract Interfaces](#5-abstract-interfaces)
-6. [Plugin Architecture and Registry](#6-plugin-architecture-and-registry)
-7. [Configuration and Settings](#7-configuration-and-settings)
-8. [Seeding and Reproducibility](#8-seeding-and-reproducibility)
-9. [Infrastructure](#9-infrastructure)
-10. [Design Decisions](#10-design-decisions)
+2. [Related Work and Positioning](#2-related-work-and-positioning)
+3. [Six-Layer Pipeline](#3-six-layer-pipeline)
+4. [Module Dependency Graph](#4-module-dependency-graph)
+5. [Domain Model](#5-domain-model)
+6. [Abstract Interfaces](#6-abstract-interfaces)
+7. [Plugin Architecture and Registry](#7-plugin-architecture-and-registry)
+8. [Configuration and Settings](#8-configuration-and-settings)
+9. [Seeding and Reproducibility](#9-seeding-and-reproducibility)
+10. [Infrastructure](#10-infrastructure)
+11. [Design Decisions](#11-design-decisions)
 
 ---
 
@@ -34,7 +35,50 @@ The framework is organized around three guiding principles:
 
 ---
 
-## 2. Six-Layer Pipeline
+## 2. Related Work and Positioning
+
+RAG poisoning/robustness is an active, fast-moving research area. This section positions EIGER/EIBench against the current literature (as of mid-2026) so that the delta is explicit rather than implicit — both for readers evaluating this work and for the team itself when writing up results.
+
+### Corpus poisoning attacks on RAG
+
+- **PoisonedRAG** (Zou et al., 2024) — the foundational knowledge-corruption attack: injects a handful of adversarially-optimized texts into a RAG knowledge base to force an attacker-chosen answer to an attacker-chosen question, achieving ~90% attack success with as few as 5 injected texts in a million-scale corpus. Established the "retrieval condition + generation condition" framing that most follow-up work (including detection/defense papers) still uses.
+- **Benchmarking Poisoning Attacks against Retrieval-Augmented Generation** (Zhang et al., 2025) — a comprehensive benchmark evaluating existing attacks and defenses across many RAG architectures (sequential, branching, conditional, loop, multi-turn conversational, multimodal, agentic), finding attack effectiveness drops significantly on expanded/harder datasets.
+- **RevPRAG** (2025) and **RAGForensics** — detection and post-hoc traceback of poisoned content already in a knowledge base, i.e. the defensive counterpart to attack benchmarks like PoisonedRAG.
+
+### Trustworthiness and robustness frameworks
+
+- **TrustRAG** and **RobustRAG** — general-purpose robustness/trustworthiness enhancement frameworks (isolate-then-aggregate strategies, conflict-aware filtering) rather than attack taxonomies or evaluation metrics per se.
+- Multiple 2024-2025 surveys ("Trustworthiness in Retrieval-Augmented Generation Systems") catalog the broader threat landscape (poisoning, prompt injection, privacy leakage) that EIGER's scope (corpus poisoning only) is a deliberate subset of.
+
+### Fact-checking-grounded misinformation robustness
+
+- **RAGuard** (2025) — the closest existing work in spirit: the first benchmark to evaluate RAG robustness against *naturally occurring* misinformation, using a fact-checking dataset of misleading retrievals. Found that RAG systems can perform *worse* than their own zero-shot baseline when misled, while human annotators do not — i.e. RAG's context-grounding can actively hurt rather than help under misinformation. EIGER also builds on fact-checking corpora (Snopes, AVeriTeC, PolitiFact, FactCheck.org — see docs/DATASETS.md) but *synthesizes* controlled poisoned variants from verified-true claims rather than sampling naturally-occurring misleading documents as-is (see differentiation below).
+
+### Faithfulness / hallucination benchmarks (not poisoning-specific)
+
+- **RAGTruth** — ~18,000 span-level hallucination annotations across QA, summarization, and data-to-text generation.
+- **RAGChecker** (NeurIPS 2024) — decomposes RAG responses into atomic verifiable claims, scoring each independently.
+- **FaithJudge** — an LLM-as-judge framework calibrated against human-annotated hallucination examples.
+- These measure faithfulness/hallucination as a general property of RAG outputs; none specifically targets the "the retrieved context was poisoned and the model faithfully reproduced the poison" failure mode that FFR isolates (see below).
+
+### How EIGER/EIBench differs
+
+1. **Controlled, taxonomy-driven perturbation of verified-true documents, not adversarially-optimized injection or as-is naturally-occurring misinformation.** EIGER's four attacks (`numerical_shift`, `attribution_switch`, `causal_manipulation`, `date_manipulation` — Section 3's Layer 2/`eiger/attacks/`) each apply one specific, well-defined type of factual edit to a document whose original claim is independently verified true. This is a different threat model from PoisonedRAG's LLM-optimized injected text (designed purely to maximize retrieval+generation success) and from RAGuard's naturally-sampled misleading documents (which conflate many error types at once). The payoff is systematic per-error-type ablation — "which *kind* of factual corruption is most dangerous to a given RAG configuration" — rather than a single aggregate attack-success-rate number.
+2. **FFR isolates a specific, narrow failure mode.** Faithful Falsehood Rate (Section 3's Layer 5/`eiger/metrics/ffr.py`) requires an answer to be *both* faithful to a (potentially poisoned) context *and* wrong relative to independently-verified ground truth. This is sharper than RAGTruth/RAGChecker/FaithJudge's general hallucination/faithfulness scoring: it does not ask "did the model hallucinate beyond its context" but "did the model over-trust a corrupted context, and how often does that happen per poisoning strategy." Source Integrity (SI) is deliberately kept as a separate, entailment-based axis so the project's core hypothesis — that faithfulness and source integrity diverge as poisoning increases — is directly testable rather than assumed.
+3. **Reproducible, multi-corpus, extensible tooling**, not a single-paper attack demo. Seeded determinism, git-commit/config-hash provenance on every result (Section 9), a registry-based plugin architecture across attacks/metrics/datasets/retrievers/LLM backends (Section 7), a CLI, and — as of Sprint 3 — five real fact-checking corpora with a common loading interface (`eiger.datasets`; see docs/DATASETS.md). This positions EIGER closer to the released-code contributions of PoisonedRAG/RAGTruth/RAGChecker (which is what made them reusable by others) than to a narrower single-attack proof of concept.
+
+### Current limitations relative to this positioning
+
+Honest gaps that should be closed before FFR/ERS results are treated as publication-ready, or before positioning this as "the" community platform (see also docs/DATASETS.md section 11 and each dataset's own "not yet independently reviewed" note):
+
+- **Faithfulness/correctness scoring is currently a heuristic proxy, not validated.** `EmbeddingFaithfulnessScorer` (Section 3's Layer 5, `eiger/metrics/heuristic_scorer.py`) approximates `ragas_faithfulness`/`ragas_answer_correctness` via cosine similarity — it is not the real RAGAS pipeline, nor has it been calibrated against human judgments or an LLM-judge (à la FaithJudge). This is the single biggest scientific-validity risk in the current codebase: FFR/ERS numbers computed with this proxy should be treated as a placeholder signal, not a validated measurement, until either RAGAS is properly wired in or the proxy is calibrated against a human-annotated sample.
+- **External datasets are not yet independently reviewed.** Every claim loaded via `SnopesDataset`/`AVeriTecDataset`/`PolitiFactDataset`/`FactCheckDataset` is tagged `metadata["verified"] = False` pending a research-team spot-check, even though each upstream source already rates them as true/verified.
+- **`context_query` is a templated fallback for three of four external datasets.** AVeriTeC uses real evidence questions and Snopes uses LLM-generated questions, but PolitiFact and FactCheck.org currently get a generic `"Is it true that {claim}?"` template (see docs/DATASETS.md sections 4-5), which may understate retrieval difficulty relative to how an independent user would actually phrase a question — worth an ablation or a future LLM-enrichment pass (mirroring `scripts/enrich_snopes_claims.py`) before drawing conclusions from those two datasets.
+- **No head-to-head comparison against stronger, optimized attacks yet.** EIGER's four attacks are all "soft edits" to true documents; their relative strength against PoisonedRAG-style adversarially-optimized injected text (or RAGuard-style as-is misinformation) is currently unquantified, since no shared benchmark run has been done across frameworks.
+
+---
+
+## 3. Six-Layer Pipeline
 
 The experiment pipeline is a directed acyclic graph of six processing layers. Each layer is independently testable and replaceable.
 
@@ -110,7 +154,7 @@ Persists the full `ExperimentResult` to disk, computes aggregate statistics, and
 
 ---
 
-## 3. Module Dependency Graph
+## 4. Module Dependency Graph
 
 Dependencies flow strictly downward. Higher layers import lower layers; the reverse is prohibited. The `core` layer has no imports from any other `eiger` subpackage.
 
@@ -148,7 +192,7 @@ As a table showing which modules each layer may import:
 
 ---
 
-## 4. Domain Model
+## 5. Domain Model
 
 All domain models are Pydantic v2 `BaseModel` subclasses. They validate on construction, serialize cleanly to JSON, and carry no infrastructure dependencies. The full model graph is defined in `eiger/core/models.py`.
 
@@ -302,7 +346,7 @@ Full output of a completed run. Written to `output_dir/results.json`.
 
 ---
 
-## 5. Abstract Interfaces
+## 6. Abstract Interfaces
 
 All extension points are defined in `eiger/core/interfaces.py` as Python `ABC` subclasses. Implementations in outer layers depend only on these contracts, never on concrete types.
 
@@ -432,7 +476,7 @@ class BaseMetric(ABC):
 
 ---
 
-## 6. Plugin Architecture and Registry
+## 7. Plugin Architecture and Registry
 
 ### Registry Pattern
 
@@ -509,7 +553,7 @@ The same pattern applies to custom metrics (entry point group: `eiger.metrics`) 
 
 ---
 
-## 7. Configuration and Settings
+## 8. Configuration and Settings
 
 ### Resolution Order
 
@@ -582,7 +626,7 @@ output_dir: results/
 
 ---
 
-## 8. Seeding and Reproducibility
+## 9. Seeding and Reproducibility
 
 ### Isolation Principle
 
@@ -631,7 +675,7 @@ An experiment run is fully reproducible given:
 
 ---
 
-## 9. Infrastructure
+## 10. Infrastructure
 
 ### Development Stack (Docker Compose + native Ollama)
 
@@ -662,7 +706,7 @@ For distributed topology experiments, the framework includes a ContainerLab conf
 
 ---
 
-## 10. Design Decisions
+## 11. Design Decisions
 
 ### D1: Pydantic v2 for All Domain Models
 

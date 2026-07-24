@@ -20,7 +20,9 @@ It introduces and operationalises the **Faithful Falsehood** — an answer that 
 - ✅ **Faithful** to the retrieved context (the LLM did its job correctly), and
 - ❌ **Factually wrong** relative to independently verified ground truth (the context itself was poisoned)
 
-This failure mode is invisible to standard faithfulness metrics (RAGAS, TruLens) because faithfulness is measured against context, not against truth.
+This failure mode is invisible to standard faithfulness metrics (RAGAS, TruLens, and hallucination benchmarks like [RAGTruth](https://aclanthology.org/2025.emnlp-industry.54/)/[RAGChecker](https://arxiv.org/abs/2408.08067)/FaithJudge) because they measure faithfulness against context, not against independently-verified truth.
+
+**How this differs from existing RAG poisoning/robustness work:** [PoisonedRAG](https://arxiv.org/abs/2402.07867) established knowledge-corruption attacks via adversarially-optimized injected text; [RAGuard](https://arxiv.org/abs/2502.16101) is the closest existing benchmark in spirit, sampling naturally-occurring misinformation from fact-checking sources. EIBench instead applies a controlled taxonomy of factual-edit attacks (numerical, attributional, causal, temporal) to independently-verified true documents, enabling per-error-type ablation rather than a single aggregate attack-success number — see [`docs/ARCHITECTURE.md` §2](docs/ARCHITECTURE.md#2-related-work-and-positioning) for the full literature positioning, differentiation, and an honest list of current limitations (most notably: FFR/ERS today rely on a heuristic, not-yet-validated faithfulness proxy — see that section before treating any FFR/ERS numbers as publication-ready).
 
 ---
 

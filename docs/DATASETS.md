@@ -30,6 +30,8 @@ EIBench requires datasets composed of verifiable factual claims — statements w
 
 Fact-checking corpora — originally created for automated claim verification research — satisfy both requirements. They provide structured claims with verified verdicts, supporting evidence, and domain coverage across politics, science, economics, and health.
 
+This is also what distinguishes EIBench's approach from benchmarks that sample naturally-occurring misinformation as-is (e.g. RAGuard) or inject adversarially-optimized text (e.g. PoisonedRAG): every poisoned document here starts from a real, independently-verified true claim, and the poisoning engine (Section 3's Layer 2 of `docs/ARCHITECTURE.md`) applies one specific, well-defined type of factual edit to it. See `docs/ARCHITECTURE.md` §2 ("Related Work and Positioning") for the full literature comparison and an honest list of current limitations.
+
 ---
 
 ## 2. Supported Datasets

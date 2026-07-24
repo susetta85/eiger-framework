@@ -1,5 +1,3 @@
-version: "3.9"
-
 # Reproducible research infrastructure for EIBench.
 # All images are pinned to exact versions.
 # Run: docker compose up -d

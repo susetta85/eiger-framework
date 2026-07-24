@@ -29,6 +29,13 @@ env: ## Copy .env.example to .env (first-time setup)
 
 # ─── Infrastructure ───────────────────────────────────────────────────────────
 up: ## Start Qdrant + Ollama via Docker Compose
+	@docker info >/dev/null 2>&1 || ( \
+		echo "❌  Docker daemon not reachable."; \
+		echo "    If you're using OrbStack: open it once from Applications/Launchpad"; \
+		echo "    (or run: open -a OrbStack), wait a few seconds for it to finish"; \
+		echo "    starting, then re-run 'make up'. Same idea for Docker Desktop."; \
+		exit 1 \
+	)
 	docker compose up -d
 	@echo "⏳  Waiting for Qdrant..."
 	@sleep 3

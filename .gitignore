@@ -16,6 +16,10 @@ build/
 .ruff_cache/
 htmlcov/
 .coverage
+# coverage.py's parallel mode produces .coverage.<host>.<pid>.<rand> files
+# (e.g. via COVERAGE_FILE or --parallel-mode); the bare ".coverage" pattern
+# above does not match these, and one was previously committed by mistake.
+.coverage.*
 coverage.xml
 
 # Environment & secrets

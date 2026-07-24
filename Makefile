@@ -1,8 +1,23 @@
-.PHONY: help bootstrap setup install dev-install up up-docker-ollama ollama-pull down test test-unit test-integration lint type-check format clean
+.PHONY: help bootstrap setup activate install dev-install up up-docker-ollama ollama-pull down test test-unit test-integration lint type-check format clean
 
 PYTHON := python3
 PIP    := $(PYTHON) -m pip
 PYTEST := $(PYTHON) -m pytest
+
+# Virtualenv directory, suffixed with the short hostname.
+#
+# Why: this repo is sometimes worked on from two machines (e.g. a physical
+# Mac and a Debian/Ubuntu VM) pointed at the SAME shared/synced folder. A
+# venv embeds absolute, OS-specific paths in its symlinks and pyvenv.cfg
+# (pointing at the exact Python binary that created it); if both machines
+# shared one literal "venv/" directory, whichever machine ran `make setup`
+# last would silently overwrite the other's symlinks — producing confusing
+# "ModuleNotFoundError: No module named 'eiger'" errors on the machine that
+# didn't set up last, even though the package was correctly installed. This
+# actually happened during Sprint 3. Naming the venv per-host avoids the
+# clash entirely, with zero manual discipline required, while still living
+# inside the (possibly shared) repo folder for single-machine users too.
+VENV_DIR := venv-$(shell hostname -s 2>/dev/null || hostname 2>/dev/null || echo host)
 
 help:  ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -12,8 +27,8 @@ help:  ## Show this help message
 bootstrap: ## Fresh machine, nothing installed yet: installs Python/pip, Docker, Ollama (+ pulls its default model), then runs 'setup' (macOS via Homebrew, or Debian/Ubuntu via apt)
 	./setup.sh
 
-setup: ## Create virtualenv and install all dependencies (assumes python3.10+ already installed)
-	$(PYTHON) -m venv venv
+setup: ## Create a per-machine virtualenv (see VENV_DIR above) and install all dependencies (assumes python3.10+ already installed)
+	$(PYTHON) -m venv $(VENV_DIR)
 	@# Some Debian/Ubuntu python3-venv builds create a venv WITHOUT pip
 	@# (pip is stripped from the distro's ensurepip bundle on some
 	@# versions). Bootstrap it explicitly rather than assuming
@@ -21,10 +36,13 @@ setup: ## Create virtualenv and install all dependencies (assumes python3.10+ al
 	@# produced a confusing "pip: command not found" for a contributor
 	@# on Debian even though setup.sh had already apt-installed
 	@# python3-pip system-wide.
-	@test -x ./venv/bin/pip || ./venv/bin/python -m ensurepip --upgrade
-	./venv/bin/pip install --upgrade pip
-	./venv/bin/pip install -e ".[dev,data-import]"
-	@echo "✅  Run: source venv/bin/activate"
+	@test -x ./$(VENV_DIR)/bin/pip || ./$(VENV_DIR)/bin/python -m ensurepip --upgrade
+	./$(VENV_DIR)/bin/pip install --upgrade pip
+	./$(VENV_DIR)/bin/pip install -e ".[dev,data-import]"
+	@echo "✅  Run: source $(VENV_DIR)/bin/activate"
+
+activate: ## Print the exact 'source .../bin/activate' command for this machine's venv
+	@echo "source $(VENV_DIR)/bin/activate"
 
 install: ## Install package (production)
 	$(PIP) install -e .

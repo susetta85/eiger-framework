@@ -1,0 +1,41 @@
+# Snopes Pilot Experiment — sanity-check the new SnopesDataset against
+# real enriched data, no poisoning yet.
+#
+# Prerequisites:
+#   - data/snopes/snopes_enriched.json must already exist (produced by
+#     scripts/enrich_snopes_claims.py — see scripts/README.md)
+#   - `make up` (Qdrant) and Ollama running (native, via `make bootstrap`)
+#
+# Run with: python -m eiger run experiments/snopes_pilot.yaml
+
+experiment_id: snopes_pilot
+description: "Pilot run on real Snopes claims (no poisoning) to validate the dataset end-to-end"
+seed: 42
+
+dataset:
+  name: snopes
+  path: null       # uses SnopesDataset's default: data/snopes/snopes_enriched.json
+  split: test
+  max_claims: 20   # small pilot slice — raise once the full run looks good
+
+attacks: []  # No attacks in this pilot — just verifying the dataset + pipeline
+
+retriever:
+  type: dense
+  embedder: sentence-transformers/all-MiniLM-L6-v2
+  vector_store: qdrant
+  top_k: 5
+  collection_name: eibench_snopes_pilot
+
+llm:
+  backend: ollama
+  model: llama3.1:8b
+  temperature: 0.0
+  max_tokens: 512
+
+metrics:
+  - ffr
+  - source_integrity
+  - ers
+
+output_dir: results/snopes_pilot/

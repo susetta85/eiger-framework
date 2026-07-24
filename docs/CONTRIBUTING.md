@@ -43,7 +43,7 @@ git checkout -b feature/my-new-attack
 
 ```bash
 make setup
-source venv/bin/activate
+eval "$(make -s activate)"   # or: source venv-<hostname>/bin/activate (run 'make activate' to see the exact path)
 ```
 
 ### 4. Verify the Baseline

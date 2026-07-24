@@ -40,8 +40,10 @@
 #      environment is actually runnable at the end of this script, not
 #      just installed. Re-run any time with `make ollama-pull` (or pull
 #      a different model directly with `ollama pull <name>`).
-#   5. Runs `make setup` (creates venv/, installs the package with the
-#      dev + data-import extras — this is what brings in openpyxl, PyYAML,
+#   5. Runs `make setup` (creates a per-machine venv-<hostname>/ directory —
+#      see the Makefile's VENV_DIR comment for why it's per-host rather
+#      than a fixed "venv/" — and installs the package with the dev +
+#      data-import extras — this is what brings in openpyxl, PyYAML,
 #      pytest, etc.; see pyproject.toml).
 #
 # What this script does NOT do:
@@ -228,16 +230,22 @@ fi
 
 # ─── Project virtualenv + dependencies (both platforms) ────────────────────
 
-info "Running 'make setup' (creates venv/, installs the package)..."
+info "Running 'make setup' (creates a per-machine venv, installs the package)..."
 make setup
+_ACTIVATE_CMD="$(make -s activate)"
 
 echo ""
 info "Bootstrap complete. Python, pip, Docker, and Ollama (with its default"
 info "model already pulled) are all set up. Next steps:"
-echo "    1. source venv/bin/activate"
+echo "    1. $_ACTIVATE_CMD"
 echo "    2. make env         # creates .env from .env.example"
 echo "    3. make up          # starts Qdrant via Docker"
 echo "    4. make test-unit"
+echo ""
+echo "Note: the venv directory is named venv-<hostname> (not a plain 'venv/'),"
+echo "specifically so this still works if this repo is on a folder shared"
+echo "between multiple machines (e.g. a Mac + a VM) — run 'make activate' any"
+echo "time to print the exact command for THIS machine."
 echo ""
 echo "Note: ContainerLab (infra/containerlab/) is NOT needed for any of this"
 echo "— it's an optional, separate stack only for distributed network-"

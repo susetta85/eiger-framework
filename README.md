@@ -148,12 +148,17 @@ cd eiger-framework
 
 # Create virtual environment and install
 make setup
-source venv/bin/activate
+eval "$(make -s activate)"   # activates the venv; run 'make activate' any time to see the plain command
 
 # Copy environment template
 make env
 # Edit .env if needed (defaults work for local Docker Compose)
 ```
+
+Note: `make setup` creates the venv as `venv-<hostname>/`, not a plain `venv/` —
+this keeps things working even if the repo folder is shared/synced between
+multiple machines (a venv embeds OS-specific absolute paths, so a single
+shared `venv/` would break on whichever machine set up last).
 
 ### 3. Start infrastructure
 

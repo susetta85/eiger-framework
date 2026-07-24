@@ -70,8 +70,11 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
-# Ollama's default local server address (see docker-compose.yml).
-#DEFAULT_HOST = "localhost"
+# Ollama's default local server address (see docker-compose.yml). Uses the
+# literal IPv4 loopback address rather than "localhost" because some
+# systems resolve "localhost" to the IPv6 loopback (::1) first, and Ollama
+# (or the native install's systemd unit) may only be listening on IPv4 —
+# causing spurious connection failures that a literal "127.0.0.1" avoids.
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 11434
 # Matches LLMConfig.model's default (eiger.core.models) — a widely
@@ -97,7 +100,8 @@ class OllamaLLM(BaseLLM):
     Args:
         model_name:  Ollama model tag (e.g. "llama3.1:8b"). Must already be
                      pulled on the target server.
-        host:        Hostname of the Ollama server. Default: "localhost".
+        host:        Hostname of the Ollama server. Default: "127.0.0.1"
+                     (literal IPv4 loopback — see DEFAULT_HOST's comment).
         port:        Port of the Ollama server. Default: 11434.
         temperature: Default sampling temperature. Default: 0.0 (deterministic,
                      required for reproducible experiments). Overridable per-call.

@@ -31,7 +31,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from eiger.core.exceptions import GenerationError
-from eiger.llm.ollama import DEFAULT_MODEL, RAG_SYSTEM_INSTRUCTION, OllamaLLM
+from eiger.llm.ollama import DEFAULT_HOST, DEFAULT_MODEL, RAG_SYSTEM_INSTRUCTION, OllamaLLM
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -68,7 +68,7 @@ class TestOllamaLLMInit:
         assert OllamaLLM().model_name == DEFAULT_MODEL
 
     def test_default_host(self) -> None:
-        assert OllamaLLM().host == "localhost"
+        assert OllamaLLM().host == DEFAULT_HOST
 
     def test_default_port(self) -> None:
         assert OllamaLLM().port == 11434
@@ -102,7 +102,7 @@ class TestOllamaLLMInit:
         assert OllamaLLM()._client is None
 
     def test_base_url_default(self) -> None:
-        assert OllamaLLM().base_url == "http://localhost:11434"
+        assert OllamaLLM().base_url == f"http://{DEFAULT_HOST}:11434"
 
     def test_base_url_custom(self) -> None:
         llm = OllamaLLM(host="myhost", port=1234)

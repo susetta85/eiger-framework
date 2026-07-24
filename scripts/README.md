@@ -38,31 +38,16 @@ fixture or into a real experiment run.
 3. **Verify** — a researcher opens each candidate's `"source"` field and
    confirms the `"original_fact"` is actually supported by that source.
 4. **Promote** — for each verified claim, manually copy it into
-   `eibench_raw_claims.json`, re-mapping fields to the schema
-   `JSONFixtureDataset` expects:
-
-   | Candidate JSON field | Promoted field in `eibench_raw_claims.json` |
-   |---|---|
-   | `claim_id` | `claim_id` (rename to the `EIB_CLAIM_NNN` convention) |
-   | `original_fact` | `original_fact` |
-   | `context_query` | `context_query` |
-   | `source`, `domain`, `notes`, `verified` | **dropped** — see limitation below |
-   | — | `adversarial_variants` (optional; hand-authored example poisoned texts, not required — see `eiger/datasets/json_fixture.py`) |
+   `eibench_raw_claims.json`, flipping `"verified"` to `true`. Every
+   field is preserved: `JSONFixtureDataset._to_claim()` carries
+   `source`/`domain`/`notes`/`verified` into `Claim.metadata` verbatim
+   when present (see `eiger/datasets/json_fixture.py` and
+   `eiger/datasets/README.md`), so nothing needs re-mapping except
+   renaming `claim_id` from the `EIB_CANDIDATE_NNN` convention to
+   `EIB_CLAIM_NNN` (a cosmetic convention, not a schema requirement).
 
    There is no automated promotion step (deliberately — promotion is the
    point at which a human takes responsibility for the fact-check).
-
-### Known limitation: provenance fields are not preserved on promotion
-
-`JSONFixtureDataset._to_claim()` only carries `adversarial_variants` into
-`Claim.metadata`; `source`/`domain`/`notes`/`verified` from the candidate
-file are currently **lost** when a claim is promoted, unless you paste
-them into `eibench_raw_claims.json`'s (currently unused) freedom to add
-extra keys per entry AND extend `JSONFixtureDataset._to_claim()` to read
-them into `metadata`. This is real, un-fixed technical debt — worth doing
-before claim volume grows large enough that losing source provenance
-becomes a real reproducibility problem, but out of scope for the initial
-intake tooling.
 
 ### Spreadsheet structure this script expects
 
@@ -72,3 +57,45 @@ Row 1 is the header, row 2 is the template's own worked example (always
 skipped), data starts at row 3. Rows missing either required field are
 reported (with their real spreadsheet row number) and skipped, not
 silently dropped.
+
+---
+
+## `enrich_snopes_claims.py` — bulk external dataset intake (Snopes)
+
+Converts a raw Snopes fact-check export (e.g. `Snopes.xlsx`) into the JSON
+schema `SnopesDataset` (`eiger/datasets/snopes.py`) expects: filters to
+`normalised_rating == True` (a verified-true statement — EIGER generates
+falsehoods itself via the attack registry, it does not import
+externally-sourced false claims as ground truth), deduplicates by
+`claim_id`, and generates a `context_query` per claim via a local Ollama
+LLM (Snopes fact-checks are indexed by claim, not by a natural question).
+
+```bash
+pip install 'eiger[data-import]'   # one-time: installs openpyxl
+
+# Pilot run first — always check output quality before the full batch:
+python scripts/enrich_snopes_claims.py path/to/Snopes.xlsx --limit 20 -o /tmp/pilot.json
+
+# Full run (requires a running Ollama server with the model pulled —
+# `make up`, then `docker exec eiger-ollama ollama pull llama3.1:8b`):
+python scripts/enrich_snopes_claims.py path/to/Snopes.xlsx \
+    -o data/snopes/snopes_enriched.json
+```
+
+The script is idempotent and resumable: re-running it with the same
+`-o` skips already-enriched `claim_id`s and only processes new ones, and
+progress is checkpointed to disk every 25 claims by default
+(`--checkpoint-every`) so an interruption loses at most that many claims.
+
+Every output claim is tagged `"verified": false`, even though Snopes
+itself already rated it `True` — this is exactly the same
+verify-then-promote posture as `import_claims_xlsx.py` above: Snopes'
+own rating is not a substitute for this research team's own review
+before a claim is reported on in published results. See
+`docs/DATASETS.md`, Section 8, for the full rationale, the exact raw
+column requirements, and what the team decided *not* to use yet (a bulk
+PolitiFact export with no per-row source URL, and a 50-row FactCheck.org
+extraction explicitly flagged `needs_manual_check: True`).
+
+`data/` (both the raw export and the enriched output) is gitignored —
+not ours to redistribute and too large for Git.

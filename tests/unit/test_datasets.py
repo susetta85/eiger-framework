@@ -137,6 +137,39 @@ class TestJSONFixtureDatasetLoad:
         claim = JSONFixtureDataset(path=fixture_path).load()[0]
         assert claim.metadata["adversarial_variants"] == {}
 
+    def test_load_carries_optional_provenance_fields_when_present(
+        self, fixture_path: Path
+    ) -> None:
+        """
+        source/domain/notes/verified — the exact fields produced by
+        scripts/import_claims_xlsx.py — must survive into Claim.metadata
+        when present, so a reviewed candidate can be pasted into the
+        fixture without losing provenance (previously-documented, now
+        fixed, limitation — see scripts/README.md).
+        """
+        entry = _valid_entry(
+            source="https://example.org/report",
+            domain="Economia",
+            notes="controllare la fonte primaria",
+            verified=True,
+        )
+        _write(fixture_path, [entry])
+
+        claim = JSONFixtureDataset(path=fixture_path).load()[0]
+        assert claim.metadata["source"] == "https://example.org/report"
+        assert claim.metadata["domain"] == "Economia"
+        assert claim.metadata["notes"] == "controllare la fonte primaria"
+        assert claim.metadata["verified"] is True
+
+    def test_load_omits_optional_provenance_fields_when_absent(
+        self, fixture_path: Path
+    ) -> None:
+        """Older fixture entries without provenance fields must be unaffected."""
+        _write(fixture_path, [_valid_entry()])
+        claim = JSONFixtureDataset(path=fixture_path).load()[0]
+        for field in ("source", "domain", "notes", "verified"):
+            assert field not in claim.metadata
+
     def test_load_multiple_entries_preserves_file_order(self, fixture_path: Path) -> None:
         _write(
             fixture_path,

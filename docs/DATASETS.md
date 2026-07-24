@@ -13,9 +13,10 @@
 5. [FactCheck.org](#5-factcheckorg)
 6. [JSON Fixture](#6-json-fixture)
 7. [JSON Fixture Format Reference](#7-json-fixture-format-reference)
-8. [Dataset Versioning](#8-dataset-versioning)
-9. [Adding a New Dataset](#9-adding-a-new-dataset)
-10. [Sprint Roadmap](#10-sprint-roadmap)
+8. [Snopes](#8-snopes)
+9. [Dataset Versioning](#9-dataset-versioning)
+10. [Adding a New Dataset](#10-adding-a-new-dataset)
+11. [Sprint Roadmap](#11-sprint-roadmap)
 
 ---
 
@@ -35,10 +36,11 @@ Fact-checking corpora — originally created for automated claim verification re
 
 | Name | Language | Approx. Size | Domain | License | Status |
 |---|---|---|---|---|---|
-| AVeriTeC | English | 4,500 claims | Multi-domain | CC BY 4.0 | Sprint 2 (planned) |
-| PolitiFact | English | 21,000+ claims | US Politics | Research use | Sprint 3 (planned) |
-| FactCheck.org | English | ~3,000 claims | Multi-domain | Research use | Sprint 4 (planned) |
-| JSON Fixture | Italian (demo) | 1 claim | Economics | Internal | Sprint 1 (active) |
+| Snopes | English | 4,832 verified-true claims (of 19,631 raw) | Multi-domain | Research use | **Implemented** (Sprint 3) |
+| AVeriTeC | English | 4,500 claims | Multi-domain | CC BY 4.0 | Planned |
+| PolitiFact | English | 21,000+ claims | US Politics | Research use | Planned |
+| FactCheck.org | English | ~3,000 claims | Multi-domain | Research use | Planned |
+| JSON Fixture | Italian (demo) | 1 claim | Economics | Internal | Implemented (Sprint 1) |
 
 ---
 
@@ -204,7 +206,7 @@ The JSON fixture is a lightweight, self-contained dataset bundled with the EIGER
 - Development and debugging of the poisoning engine
 - CI pipeline validation
 
-The fixture currently contains one claim in Italian, demonstrating the multi-lingual capability of the framework and reflecting the research team's initial prototype. It will be expanded to English AVeriTeC claims once the `AVeriTeCDataset` loader (still planned — see Section 10) is implemented.
+The fixture currently contains one claim in Italian, demonstrating the multi-lingual capability of the framework and reflecting the research team's initial prototype. English claims are now available via `SnopesDataset` (Section 8, implemented) and will be further expanded once the `AVeriTeCDataset` loader (still planned — see Section 11) is implemented.
 
 ### Location
 
@@ -279,7 +281,53 @@ The `adversarial_variants` dict is preserved in `Claim.metadata` for inspection 
 
 ---
 
-## 8. Dataset Versioning
+## 8. Snopes
+
+### Description
+
+Unlike AVeriTeC/PolitiFact/FactCheck.org above (still planned, Section 11), Snopes is **implemented**: `eiger/datasets/snopes.py`'s `SnopesDataset` (registry name `"snopes"`) loads it via the same JSON schema as the JSON Fixture (Section 7), inherited by subclassing `JSONFixtureDataset`.
+
+The raw source is a 19,631-row export of Snopes fact-checks (1995-2025) with a `normalised_rating` per claim (`True`: 4,832 · `False`: 11,872 · `partially true`: 2,335 · `misleading`: 451 · `unverifiable`: 141) and a real source `url` per row — verifiable, unlike the bare `id`/`claim`/`date` PolitiFact export the team also has on hand (see Section 4; that export has no per-row source link).
+
+Two things the raw export does NOT have, which `scripts/enrich_snopes_claims.py` adds:
+1. Only `normalised_rating == True` rows are kept (a `Claim.original_fact` must be a verified true statement — EIGER generates falsehoods itself via the attack registry, it does not import externally-sourced false claims as ground truth).
+2. A `context_query` (natural-language question) is generated per claim via a local Ollama LLM, since Snopes indexes fact-checks by claim, not by the question a person would ask to surface one.
+
+**Verification status.** Every claim produced by the enrichment script is tagged `metadata["verified"] = false`, even though Snopes itself already rated it `True` — Snopes' own rating is not treated as a substitute for this research team's own review before a claim is reported on in published results. See `scripts/README.md` for the full collect → filter → enrich → (team) verify workflow, which mirrors the manual claim-intake workflow (`scripts/import_claims_xlsx.py`) but for bulk external data instead of hand-authored claims.
+
+### Location & running the enrichment
+
+The raw `Snopes.xlsx` and the enriched output are **not** committed to Git (`data/` is gitignored — too large, and not ours to redistribute). To (re)generate the enriched file locally:
+
+```bash
+pip install 'eiger[data-import]'   # one-time: installs openpyxl
+
+# Pilot run first — check output quality before committing to the full batch:
+python scripts/enrich_snopes_claims.py path/to/Snopes.xlsx --limit 20 -o /tmp/pilot.json
+
+# Full run (requires a running Ollama server with the model pulled):
+python scripts/enrich_snopes_claims.py path/to/Snopes.xlsx \
+    -o data/snopes/snopes_enriched.json
+```
+
+The script is idempotent/resumable (checkpoints every 25 claims by default) — see its own docstring for the full design rationale.
+
+### Loading with EIGER
+
+```python
+from eiger.datasets import get_dataset
+
+dataset = get_dataset("snopes")  # defaults to data/snopes/snopes_enriched.json
+claims = dataset.load(max_claims=100)
+
+print(claims[0].source_dataset)          # "snopes"
+print(claims[0].metadata["source"])      # the original snopes.com URL
+print(claims[0].metadata["verified"])    # False, pending team review
+```
+
+---
+
+## 9. Dataset Versioning
 
 ### Content Hashing
 
@@ -320,7 +368,7 @@ Until Sprint 3, dataset versioning relies solely on `content_hash` logged in `Ex
 
 ---
 
-## 9. Adding a New Dataset
+## 10. Adding a New Dataset
 
 Follow these four steps to integrate a new fact-checking corpus into EIGER.
 
@@ -424,16 +472,17 @@ print(f"Content hash: {ds.content_hash}")
 
 ---
 
-## 10. Sprint Roadmap
+## 11. Sprint Roadmap
 
 | Dataset | Sprint | Milestone |
 |---|---|---|
 | JSON Fixture (1 claim, Italian) | Sprint 1 | **Implemented.** `JSONFixtureDataset` + the `eiger.datasets` registry. Used for all unit and integration tests. |
+| Snopes (English, 4,832 verified-true claims) | Sprint 3 | **Implemented.** `SnopesDataset` + `scripts/enrich_snopes_claims.py` (filter/dedupe/LLM-generated context_query). Not yet independently reviewed by the research team — see Section 8. |
 | AVeriTeC (English, ~4,500 claims) | Sprint 2 | Planned. Primary research corpus. Loader implementation + DVC tracking. |
-| PolitiFact via LIAR (English, ~12,800 claims) | Sprint 3 | Planned. Political domain expansion. |
-| FactCheck.org via CheckThat! (English, ~3,000 claims) | Sprint 4 | Planned. Multi-domain expansion. |
+| PolitiFact via LIAR (English, ~12,800 claims) | Sprint 3 | Planned. Political domain expansion. Note: the team also has a bulk PolitiFact export on hand (`politifact_true.csv`/`politifact_false.csv`, id/claim/date only, no source URL) — lower priority than Snopes due to the missing per-row source link and minor non-English contamination in the false subset. |
+| FactCheck.org via CheckThat! (English, ~3,000 claims) | Sprint 4 | Planned. Multi-domain expansion. Note: the team also has a 50-row bulk-extracted `factcheck_false.csv`, every row explicitly flagged `needs_manual_check: True` — candidate FALSE claims requiring manual review, not a source of `Claim.original_fact` ground truth. |
 | Multi-lingual extension (Italian, French, German) | Sprint 5 | Planned. Cross-lingual epistemic robustness. |
 
-Note: the "Sprint" column above is this document's own dataset-specific roadmap numbering, established during Sprint 1 planning, and does not necessarily align 1:1 with the project's actual sprint cadence (e.g. the retrieval/generation/orchestration layer built in the project's own "Sprint 2" did not touch datasets at all). The `eiger.datasets` registry and `JSONFixtureDataset` described in Sections 6-7 were implemented during the project's Sprint 3.
+Note: the "Sprint" column above is this document's own dataset-specific roadmap numbering, established during Sprint 1 planning, and does not necessarily align 1:1 with the project's actual sprint cadence (e.g. the retrieval/generation/orchestration layer built in the project's own "Sprint 2" did not touch datasets at all). The `eiger.datasets` registry and `JSONFixtureDataset` described in Sections 6-7, and `SnopesDataset` described in Section 8, were all implemented during the project's Sprint 3.
 
-The JSON fixture will remain in the repository indefinitely as the canonical fast-test dataset. All CI pipelines run against the fixture only; full-scale experiments against AVeriTeC and PolitiFact are run on the research compute cluster and results are archived under `experiments/`.
+The JSON fixture will remain in the repository indefinitely as the canonical fast-test dataset. All CI pipelines run against the fixture (and, once independently reviewed, Snopes) only; full-scale experiments against AVeriTeC and PolitiFact are run on the research compute cluster and results are archived under `experiments/`.

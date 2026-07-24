@@ -51,6 +51,12 @@ log = get_logger(__name__)
 # resolves the repo root in eiger/experiments/runner.py.
 _DEFAULT_FIXTURE_PATH = Path(__file__).resolve().parents[2] / "eibench_raw_claims.json"
 
+# Optional per-claim provenance keys, carried into Claim.metadata verbatim
+# when present. Matches the exact field names scripts/import_claims_xlsx.py
+# writes to its candidate JSON output, so a reviewed candidate can be
+# pasted into the fixture without renaming anything (see _to_claim()).
+_OPTIONAL_PROVENANCE_FIELDS = ("source", "domain", "notes", "verified")
+
 
 class JSONFixtureDataset(BaseDataset):
     """
@@ -62,6 +68,10 @@ class JSONFixtureDataset(BaseDataset):
           "original_fact": str,
           "context_query": str,
           "adversarial_variants": {attack_name: poisoned_text, ...}  # optional
+          "source": str,    # optional — provenance, see below
+          "domain": str,    # optional — provenance, see below
+          "notes": str,     # optional — provenance, see below
+          "verified": bool, # optional — provenance, see below
         }
 
     Field mapping to Claim (see docs/DATASETS.md, section "JSON Fixture"):
@@ -70,11 +80,23 @@ class JSONFixtureDataset(BaseDataset):
         context_query  -> Claim.context_query
         (this class)   -> Claim.source_dataset = "json_fixture"
         adversarial_variants -> Claim.metadata["adversarial_variants"]
+        source, domain, notes, verified (each, if present) -> the same key
+            under Claim.metadata
 
     ``adversarial_variants`` is informational provenance only (pre-authored
     example poisoned texts for documentation/manual inspection); it is not
     consumed by CorpusBuilder, which generates its own poisoned documents
     via the attack registry at ingestion time.
+
+    ``source``/``domain``/``notes``/``verified`` mirror the exact fields
+    produced by ``scripts/import_claims_xlsx.py`` (see its own docstring and
+    ``scripts/README.md`` for the full claim-intake workflow). They are
+    optional and only added to ``metadata`` when present in the raw entry,
+    so older fixture entries without them are unaffected. This means a
+    reviewed candidate claim (with ``"verified"`` manually flipped to
+    ``true``) can be pasted into ``eibench_raw_claims.json`` almost as-is
+    without losing its provenance — this was a real, previously-documented
+    limitation (see git history / scripts/README.md) fixed here.
     """
 
     name: str = "json_fixture"
@@ -190,10 +212,18 @@ class JSONFixtureDataset(BaseDataset):
 
     def _to_claim(self, item: dict[str, Any]) -> Claim:
         """Map one raw fixture entry to a Claim, per the class docstring."""
+        metadata: dict[str, Any] = {"adversarial_variants": item.get("adversarial_variants", {})}
+        # Optional provenance passthrough (see class docstring): only added
+        # when actually present, so fixture entries predating this feature
+        # are unaffected and metadata isn't padded with meaningless keys.
+        for provenance_field in _OPTIONAL_PROVENANCE_FIELDS:
+            if provenance_field in item:
+                metadata[provenance_field] = item[provenance_field]
+
         return Claim(
             claim_id=item["claim_id"],
             original_fact=item["original_fact"],
             context_query=item["context_query"],
             source_dataset=self.name,
-            metadata={"adversarial_variants": item.get("adversarial_variants", {})},
+            metadata=metadata,
         )

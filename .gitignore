@@ -32,6 +32,11 @@ chroma_data/
 ollama_data/
 qdrant_storage/
 results/
+# External/large dataset files (raw exports and LLM-enriched output) —
+# too large and/or not ours to redistribute via Git. See docs/DATASETS.md
+# and scripts/README.md for how each dataset under data/<name>/ is
+# produced and where the raw source files live.
+data/
 
 # ContainerLab runtime artifacts (never commit these)
 clab-*/

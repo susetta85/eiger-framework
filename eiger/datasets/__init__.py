@@ -8,9 +8,12 @@ the pattern already established by eiger.attacks and eiger.metrics.
 Currently registered datasets
 ------------------------------
   - JSONFixtureDataset ("json_fixture") — bundled development/CI fixture.
-    See eiger.datasets.json_fixture for details and docs/DATASETS.md for
-    the full dataset roadmap (AVeriTeC, PolitiFact, FactCheck.org — not
-    yet implemented).
+  - SnopesDataset ("snopes") — LLM-enriched Snopes fact-checks (True-rated
+    subset only). Requires running scripts/enrich_snopes_claims.py first;
+    see eiger.datasets.snopes for the full pipeline and scripts/README.md.
+
+See docs/DATASETS.md for the full dataset roadmap (AVeriTeC, PolitiFact,
+FactCheck.org — not yet implemented).
 
 Responsibilities of this module
 --------------------------------
@@ -33,13 +36,16 @@ What this module does NOT do
 # ─── Built-in dataset classes ────────────────────────────────────────────────
 from eiger.datasets.json_fixture import JSONFixtureDataset
 from eiger.datasets.registry import get_dataset, list_datasets, register_dataset
+from eiger.datasets.snopes import SnopesDataset
 
 # ─── Auto-registration ───────────────────────────────────────────────────────
 
 # Registered at import time so that `import eiger.datasets` immediately
-# enables `get_dataset("json_fixture")` with no further setup. Idempotent,
-# so repeated imports (e.g. across test modules) are harmless.
+# enables `get_dataset("json_fixture")` / `get_dataset("snopes")` with no
+# further setup. Idempotent, so repeated imports (e.g. across test
+# modules) are harmless.
 register_dataset(JSONFixtureDataset)
+register_dataset(SnopesDataset)
 
 # ─── Public API declaration ───────────────────────────────────────────────────
 
@@ -50,4 +56,5 @@ __all__ = [
     "list_datasets",
     # Concrete dataset classes
     "JSONFixtureDataset",
+    "SnopesDataset",
 ]

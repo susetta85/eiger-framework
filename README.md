@@ -91,6 +91,7 @@ EIBench is a six-layer pipeline. Each layer is independently extensible via a pl
 | 6 | `ExperimentRunner` orchestration + `results.json` provenance | ✅ Sprint 2 |
 | 7 | Dataset registry + `JSONFixtureDataset` loader | ✅ Sprint 3 |
 | 8 | `eiger` CLI (`run`/`list-datasets`/`list-attacks`/`list-metrics`) | ✅ Sprint 3 |
+| 9 | `SnopesDataset` (4,832 verified-true claims) + `scripts/enrich_snopes_claims.py` (filter/dedupe/LLM context_query) | ✅ Sprint 3 — not yet independently reviewed, see `docs/DATASETS.md` §8 |
 | — | AVeriTeC/PolitiFact/FactCheck.org loaders, sparse/hybrid retrieval, OpenAI LLM backend, real RAGAS-based faithfulness scorer, degradation curves / HTML report | 🔄 Future sprints |
 
 ---
@@ -242,7 +243,7 @@ eiger-framework/
 │   └── utils/                # Logging, seeding, hashing
 │
 ├── tests/
-│   ├── unit/                 # Fast, no external services (346 tests, 100% coverage)
+│   ├── unit/                 # Fast, no external services (358 tests, 100% coverage)
 │   └── integration/          # Requires docker compose up
 │
 ├── experiments/              # YAML experiment definitions

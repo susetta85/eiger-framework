@@ -1,9 +1,9 @@
 # eiger.datasets
 
-Status: **Sprint 3 (in progress)** — the registry and one concrete loader,
-`JSONFixtureDataset`, are implemented and tested. AVeriTeC, PolitiFact, and
-FactCheck.org loaders are still planned (see `docs/DATASETS.md` for their
-full specs and the roadmap).
+Status: **Sprint 3** — the registry and two concrete loaders,
+`JSONFixtureDataset` and `SnopesDataset`, are implemented and tested.
+AVeriTeC, PolitiFact, and FactCheck.org loaders are still planned (see
+`docs/DATASETS.md` for their full specs and the roadmap).
 
 ---
 
@@ -13,6 +13,7 @@ full specs and the roadmap).
 |------------------|----------------------|--------------------------------|-------------|
 | `registry.py`    | —                    | `register_dataset`/`get_dataset`/`list_datasets` | Implemented |
 | `json_fixture.py`| `JSONFixtureDataset` | `eibench_raw_claims.json`      | Implemented |
+| `snopes.py`      | `SnopesDataset`      | LLM-enriched Snopes export (`scripts/enrich_snopes_claims.py`) | Implemented |
 | `averitec.py`    | `AVeriTeCDataset`    | HuggingFace `datasets` library | Planned     |
 | `politifact.py`  | `PolitiFactDataset`  | LIAR TSV                       | Planned     |
 | `factcheck.py`   | `FactCheckDataset`   | CheckThat! corpus              | Planned     |
@@ -96,10 +97,19 @@ Field mapping to `Claim`:
 | `context_query`          | `context_query`                       | Yes      |
 | (fixed value)            | `source_dataset` = `"json_fixture"`   | —        |
 | `adversarial_variants`   | `metadata["adversarial_variants"]`    | No       |
+| `source`, `domain`, `notes`, `verified` (each, if present) | same key under `metadata` | No |
 
 `adversarial_variants` is informational/example provenance only — it is
 **not** consumed by `CorpusBuilder`, which generates its own poisoned
 documents at ingestion time via the attack registry (`get_attack(...)`).
+
+`source`/`domain`/`notes`/`verified` mirror the fields produced by
+`scripts/import_claims_xlsx.py` exactly, and are only added to `metadata`
+when present in the raw entry — older fixture entries without them are
+unaffected. This means a reviewed candidate claim can be pasted into
+`eibench_raw_claims.json` almost as-is (just flip `"verified"` to `true`)
+without losing its provenance; see `scripts/README.md` for the full
+collect → convert → verify → promote workflow.
 
 ### Usage
 
@@ -120,6 +130,27 @@ dataset = JSONFixtureDataset(path="/tmp/custom_claims.json")
 
 The resulting `claims` list is passed directly to `CorpusBuilder.build()` /
 `ExperimentRunner.run()`.
+
+---
+
+## SnopesDataset
+
+Subclasses `JSONFixtureDataset` (reuses all its parsing/error-handling
+unchanged) and overrides only `name`/`description`/the default `path`, so
+that `Claim.source_dataset` correctly reports `"snopes"`. Loads an
+LLM-enriched export produced by `scripts/enrich_snopes_claims.py` — see
+that script's docstring, `scripts/README.md`, and `docs/DATASETS.md`
+Section 8 for the full collect → filter → enrich → (team) verify
+pipeline, including why every claim is tagged `metadata["verified"] =
+false` even though Snopes itself already rated it `True`.
+
+```python
+from eiger.datasets import get_dataset
+
+dataset = get_dataset("snopes")  # defaults to data/snopes/snopes_enriched.json
+claims = dataset.load(max_claims=100)
+print(claims[0].source_dataset)  # "snopes"
+```
 
 ---
 

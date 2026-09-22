@@ -54,31 +54,35 @@ Design decisions
   in ``config.attacks`` are resolved through ``eiger.attacks.get_attack``,
   and metric names in ``config.metrics`` through ``eiger.metrics.get_metric``.
   ExperimentRunner does not maintain its own registry.
-- **No dataset loader (yet)**: Sprint 2 does not include a ``BaseDataset``
-  implementation (``eiger/datasets/`` is still empty), so ``run()`` accepts
-  an already-loaded ``list[Claim]`` directly rather than a dataset name.
-  Wiring in ``BaseDataset`` is future work; only the entry point needs to
-  change, not this orchestration logic.
+- **``run()`` takes claims, not a dataset name**: ``run()`` accepts an
+  already-loaded ``list[Claim]`` directly rather than a dataset name or
+  ``BaseDataset`` instance. This was true back in Sprint 2 (when
+  ``eiger/datasets/`` did not exist yet) and remains true now that Sprint 3
+  added five real ``BaseDataset`` loaders (see ``eiger.datasets``) — loading
+  claims from a named dataset is the CLI's job (``eiger/__main__.py``'s
+  ``_build_dataset`` + ``dataset.load(...)``), not this class's.
 - **FFR requires an external faithfulness signal — this is NOT computed
   here**: ``FFRMetric`` reads ``EvaluationRecord.faithfulness_score`` and
   ``.factual_correctness_score``, which are read from
   ``record.metrics["ragas_faithfulness"]`` / ``["ragas_answer_correctness"]``.
-  No real RAGAS (LLM-judge) integration exists yet in EIGER — RAGAS's
-  faithfulness/answer_correctness metrics require an LLM judge wrapped via
-  ``LangchainLLMWrapper``, a substantial new dependency with documented
-  reliability issues when Ollama is used as the judge. ExperimentRunner
-  instead exposes a ``faithfulness_scorer`` hook — a callable that receives
-  ``(claim, generation)`` and returns a dict to merge into the record's
-  metrics — so any scorer can be plugged in without changing this class.
-  ``eiger.metrics.EmbeddingFaithfulnessScorer`` is a ready-to-use, LLM-judge-
-  free cosine-similarity *proxy* for this signal (see its module docstring
-  for exactly what it does and does not capture — it must be reported as
-  a proxy, not as RAGAS, in any published result). A real RAGAS-based
-  scorer remains future work and can replace it without touching
-  ExperimentRunner. If "ffr" is configured without any scorer at all, a
-  warning is logged once per run: the resulting FFR values would silently
-  be 0.0 for every record (faithfulness/correctness default to 0.0), which
-  is NOT a valid experimental measurement and must not be reported as one.
+  ExperimentRunner exposes a ``faithfulness_scorer`` hook — a callable that
+  receives ``(claim, generation)`` and returns a dict to merge into the
+  record's metrics — so any scorer can be plugged in without changing this
+  class. Two are available (selected by the CLI via
+  ``ExperimentConfig.faithfulness_scorer``, see ``eiger/__main__.py``):
+  ``eiger.metrics.EmbeddingFaithfulnessScorer``, a ready-to-use, LLM-judge-
+  free cosine-similarity *proxy* (see its module docstring for exactly what
+  it does and does not capture — it must be reported as a proxy, not as
+  RAGAS, in any published result); and, as of Sprint 5,
+  ``eiger.metrics.RAGASFaithfulnessScorer``, a real RAGAS integration using
+  an Ollama-served LLM as judge via ``LangchainLLMWrapper`` (see its own
+  module docstring for the exact pinned dependency versions this required —
+  newer ``ragas`` releases are broken at import time — and for what has and
+  has not been verified about it). If "ffr" is configured without any
+  scorer at all, a warning is logged once per run: the resulting FFR values
+  would silently be 0.0 for every record (faithfulness/correctness default
+  to 0.0), which is NOT a valid experimental measurement and must not be
+  reported as one.
 - **Retriever choice branches in two places, not via a factory**: ``__init__``
   picks ``DenseRetriever``, ``SparseRetriever``, or ``HybridRetriever`` (a
   composition of both — see ``eiger/retrieval/hybrid_retriever.py``) based on

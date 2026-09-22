@@ -99,32 +99,38 @@ CorpusBuilderResult
 ## FFR and the `faithfulness_scorer` hook
 
 `FFRMetric` needs `EvaluationRecord.metrics["ragas_faithfulness"]` and
-`["ragas_answer_correctness"]` to be populated *before* it runs. No real RAGAS
-(LLM-judge) integration exists in EIGER yet — RAGAS's faithfulness /
-answer_correctness metrics both require an LLM judge wrapped via
-`LangchainLLMWrapper`, which would pull in a new, heavy `langchain` +
-`langchain-ollama` dependency, and Ollama-as-judge configurations have
-documented upstream reliability issues.
+`["ragas_answer_correctness"]` to be populated *before* it runs.
 
-`ExperimentRunner` instead exposes an optional `faithfulness_scorer`
-constructor argument: any callable `(Claim, GenerationResult) -> dict[str, float]`.
+`ExperimentRunner` exposes an optional `faithfulness_scorer` constructor
+argument: any callable `(Claim, GenerationResult) -> dict[str, float]`.
 Its return value is merged into each `EvaluationRecord.metrics` before metrics
-are computed.
+are computed. The CLI selects which one to wire in via
+`ExperimentConfig.faithfulness_scorer` (see `eiger/__main__.py`):
 
-- **`eiger.metrics.EmbeddingFaithfulnessScorer`** (Sprint 2 addition) is a
-  ready-to-use, LLM-judge-free proxy: cosine similarity between the answer
-  and the retrieved context (faithfulness proxy) / the ground truth
-  (correctness proxy), using the same `BaseEmbedder` abstraction already in
-  the project. See `eiger/metrics/README.md` for exactly what it does and
-  does not capture — **it must be reported as a proxy** ("FFR
+- **`eiger.metrics.EmbeddingFaithfulnessScorer`** (Sprint 2 addition, CLI
+  default — `faithfulness_scorer: "embedding"`) is a ready-to-use,
+  LLM-judge-free proxy: cosine similarity between the answer and the
+  retrieved context (faithfulness proxy) / the ground truth (correctness
+  proxy), using the same `BaseEmbedder` abstraction already in the project.
+  See `eiger/metrics/README.md` for exactly what it does and does not
+  capture — **it must be reported as a proxy** ("FFR
   (embedding-similarity proxy)"), not as RAGAS, in any published result. It
   logs a warning once on construction as a reminder of this.
+- **`eiger.metrics.RAGASFaithfulnessScorer`** (Sprint 5 addition, opt-in —
+  `faithfulness_scorer: "ragas"`) is a real RAGAS integration: RAGAS's
+  `Faithfulness`/`AnswerCorrectness` metrics with an Ollama-served LLM as
+  judge via `ragas.llms.LangchainLLMWrapper`. Requires the pinned `ragas`
+  optional-dependency group (`pip install -e ".[ragas]"` — see
+  `eiger/metrics/ragas_scorer.py`'s own docstring for the exact versions
+  and why they are pinned so tightly). Ollama-as-judge configurations have
+  documented upstream reliability issues, so this is a real judge, not a
+  proxy, but still not validated against human judgments for EIBench's
+  claims — report results as "FFR (RAGAS, `<model>` judge)".
+- **`faithfulness_scorer: "none"`** wires in no scorer at all.
 - If `"ffr"` is configured with no scorer at all, `ExperimentRunner` logs a
   warning once per run: faithfulness/correctness would default to 0.0 for
   every record, making the resulting FFR trivially 0.0 — not a valid
   measurement.
-- A real RAGAS-based scorer remains future work and can replace
-  `EmbeddingFaithfulnessScorer` without any change to `ExperimentRunner`.
 
 ---
 
@@ -141,6 +147,7 @@ class ExperimentConfig(BaseModel):
     retriever: RetrieverConfig
     llm: LLMConfig
     metrics: list[str] = ["ffr", "source_integrity", "ers"]
+    faithfulness_scorer: str = "embedding"  # "embedding" | "ragas" | "none" (Sprint 5)
     output_dir: str = "results/"
     description: str = ""
 ```
@@ -181,10 +188,15 @@ persistence, with 100% line coverage — using mocked `embedder`/
       `eiger/__main__.py`). `ExperimentRunner.run()` itself still accepts
       `list[Claim]` directly rather than a `DatasetConfig`, by design —
       this keeps the runner decoupled from dataset resolution.
-- [ ] Real RAGAS-based `faithfulness_scorer` (replacing/complementing
-      `EmbeddingFaithfulnessScorer`)
+- [x] Real RAGAS-based `faithfulness_scorer` — `RAGASFaithfulnessScorer`
+      (Sprint 5), complementing (not replacing) `EmbeddingFaithfulnessScorer`;
+      opt-in via `faithfulness_scorer: "ragas"`.
 - [x] `__main__.py` CLI entry point (`python -m eiger run <config.yaml>`) —
       implemented Sprint 3.
 - [x] Integration tests: full end-to-end run against live Qdrant + Ollama —
       `tests/integration/test_pipeline_live_infra.py` (skips gracefully if
       either service is unreachable).
+- [x] Real RAGAS scoring integration tests —
+      `tests/integration/test_ragas_scorer_real.py` (skips gracefully if the
+      `ragas` extra isn't installed, and further skips its live-scoring test
+      if Ollama isn't reachable — see `eiger/metrics/ragas_scorer.py`).

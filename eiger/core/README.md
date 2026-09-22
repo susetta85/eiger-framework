@@ -60,7 +60,7 @@ no infrastructure dependencies.
 
 | Model | Key fields | Purpose |
 |---|---|---|
-| `ExperimentConfig` | `experiment_id`, `seed`, `dataset`, `attacks`, `retriever`, `llm`, `metrics`, `output_dir` | Complete, validated specification for one experiment run. Loaded from YAML; serialized to JSON alongside results for provenance. Exposes `config_hash` (SHA-256 fingerprint) for reproducibility tracking. |
+| `ExperimentConfig` | `experiment_id`, `seed`, `dataset`, `attacks`, `retriever`, `llm`, `metrics`, `faithfulness_scorer`, `output_dir` | Complete, validated specification for one experiment run. Loaded from YAML; serialized to JSON alongside results for provenance. Exposes `config_hash` (SHA-256 fingerprint) for reproducibility tracking. `faithfulness_scorer` (`"embedding"` default \| `"ragas"` \| `"none"`, Sprint 5) selects which `faithfulness_scorer` the CLI wires into `ExperimentRunner` — see `eiger/metrics/README.md`. |
 | `DatasetConfig` | `name`, `split`, `max_claims`, `path` | Dataset selection: `averitec`, `politifact`, `factcheck_org`, `snopes`, or `json_fixture`. |
 | `AttackConfig` | `name`, `poison_rate`, `params` | Attack selection and per-attack hyperparameters. `name` must be registered in the attack registry. |
 | `RetrieverConfig` | `type`, `embedder`, `vector_store`, `top_k`, `collection_name` | Retriever selection: `dense`, `sparse`, or `hybrid`. Defaults to `sentence-transformers/all-MiniLM-L6-v2` over Qdrant. |

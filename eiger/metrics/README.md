@@ -125,9 +125,64 @@ scores = scorer(claim, generation)
   numeric sign flips the way a real NLI/LLM judge can — it is a coarse
   lexical/semantic similarity signal. Any FFR value computed with it must be
   reported as **"FFR (embedding-similarity proxy)"**, never as "FFR (RAGAS)".
-  It logs a warning once on construction as a reminder of exactly this. A
-  real RAGAS-based scorer remains future work and is a drop-in replacement —
-  `ExperimentRunner` does not need to change.
+  It logs a warning once on construction as a reminder of exactly this.
+
+---
+
+## `RAGASFaithfulnessScorer` — real RAGAS scoring via an Ollama judge (Sprint 5)
+
+`eiger.metrics.ragas_scorer.RAGASFaithfulnessScorer` is a drop-in replacement
+for `EmbeddingFaithfulnessScorer` — same `(Claim, GenerationResult) -> dict`
+call signature, same two output keys — that uses RAGAS's real `Faithfulness`
+and `AnswerCorrectness` metrics with an Ollama-served LLM as judge (wrapped
+via `ragas.llms.LangchainLLMWrapper`), instead of a cosine-similarity proxy.
+
+```python
+from eiger.metrics import RAGASFaithfulnessScorer
+from eiger.retrieval import SentenceTransformerEmbedder
+
+scorer = RAGASFaithfulnessScorer(
+    embedder=SentenceTransformerEmbedder(),
+    model_name="llama3.1:8b",   # the judge model — need not match the generation model
+)
+scores = scorer(claim, generation)
+# {"ragas_faithfulness": 0.83, "ragas_answer_correctness": 0.41}
+```
+
+**Requires the pinned `ragas` optional-dependency group**:
+```bash
+pip install -e ".[ragas]"
+```
+This installs `ragas==0.2.15`, `langchain-community==0.3.19`, and
+`langchain-ollama==0.2.3` — **exact pins, not lower bounds**. A clean
+`pip install ragas` (latest) currently fails at import time
+(`ModuleNotFoundError: No module named 'langchain_community.chat_models.vertexai'`)
+because `ragas` still imports a `langchain-community` submodule that no
+longer exists after that package's 0.4.x "sunset" release. This was
+reproduced directly while building this scorer — see
+`eiger/metrics/ragas_scorer.py`'s own module docstring for the full story
+before touching these pins.
+
+**Select it via config, not by passing it manually**: set
+`ExperimentConfig.faithfulness_scorer: "ragas"` (default is `"embedding"`,
+for backward compatibility with configs written before this field existed;
+`"none"` disables faithfulness scoring entirely). `eiger/__main__.py`'s
+`_build_runner` reads this field and wires the right scorer in — see that
+module's own docstring.
+
+**What is and is not verified.** The import chain, constructor signatures,
+and exact `SingleTurnSample`/metric API shape were all verified directly
+against a real installation of the pinned versions. What was *not*
+verified — it requires a live Ollama server — is end-to-end scoring
+quality: whether a local judge model (especially something as small as
+Llama 3.1 8B) produces reliable faithfulness/correctness judgments for
+EIBench's claims. Ollama-as-judge has documented upstream reliability
+issues (see explodinggradients/ragas issues #1120, #1246). **Before
+trusting any number this scorer produces, spot-check a handful of claims
+manually, and report results as "FFR (RAGAS, `<model>` judge)"** — never
+as unqualified "FFR" — exactly the same discipline required of the
+embedding proxy above, just with a different caveat (judge reliability
+instead of coarse similarity).
 
 ---
 

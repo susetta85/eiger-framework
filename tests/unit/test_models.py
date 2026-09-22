@@ -252,6 +252,29 @@ class TestExperimentConfig:
         )
         assert cfg.seed == 42
 
+    def test_faithfulness_scorer_defaults_to_embedding(self) -> None:
+        """
+        Backward compatibility: configs written before Sprint 5 (when this
+        field did not exist) must still resolve to the CLI's pre-existing
+        default scorer.
+        """
+        cfg = ExperimentConfig(
+            dataset=DatasetConfig(name="json_fixture"),
+            retriever=RetrieverConfig(),
+            llm=LLMConfig(),
+        )
+        assert cfg.faithfulness_scorer == "embedding"
+
+    def test_faithfulness_scorer_accepts_ragas_and_none(self) -> None:
+        for value in ("ragas", "none"):
+            cfg = ExperimentConfig(
+                dataset=DatasetConfig(name="json_fixture"),
+                retriever=RetrieverConfig(),
+                llm=LLMConfig(),
+                faithfulness_scorer=value,
+            )
+            assert cfg.faithfulness_scorer == value
+
     def test_config_hash_deterministic(self) -> None:
         """
         Two ExperimentConfig objects with the same field values must produce

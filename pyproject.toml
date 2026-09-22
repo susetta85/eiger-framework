@@ -59,12 +59,25 @@ dev = [
 data-import = [
     "openpyxl>=3.1.0,<4.0",
 ]
-# For features that are planned but not yet implemented: a real RAGAS-based
-# faithfulness_scorer (see eiger/metrics/README.md). HybridRetriever (RRF
-# fusion of dense + sparse) will need no new dependency beyond what
-# SparseRetriever/DenseRetriever already require, so it is not listed here.
-future = [
-    "ragas>=0.1.0",
+# RAGASFaithfulnessScorer (eiger/metrics/ragas_scorer.py, Sprint 5) — a real,
+# LLM-judge-based faithfulness_scorer, opt-in via
+# ExperimentConfig.faithfulness_scorer: "ragas".
+#
+# These exact versions are pinned, not a lower bound with no ceiling: a
+# clean `pip install ragas` (latest, 0.4.x, and also 0.3.x) currently fails
+# at import time with
+#   ModuleNotFoundError: No module named 'langchain_community.chat_models.vertexai'
+# because ragas.llms.base unconditionally imports ChatVertexAI from
+# langchain-community, which no longer bundles that submodule after its
+# 0.4.x "sunset" release. This combination is the one actually verified (by
+# importing ragas.metrics.Faithfulness/AnswerCorrectness and
+# ragas.llms.LangchainLLMWrapper in a clean virtualenv) to import cleanly —
+# see eiger/metrics/ragas_scorer.py's module docstring for the full story.
+# Do not relax these pins without re-verifying the import chain first.
+ragas = [
+    "ragas==0.2.15",
+    "langchain-community==0.3.19",
+    "langchain-ollama==0.2.3",
 ]
 
 [project.scripts]

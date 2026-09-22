@@ -38,11 +38,19 @@ Design decisions
   vector store ends up unused in that case (see ``ExperimentRunner``'s own
   docstring). A ``"hybrid"`` run uses both the vector store and the
   embedder, exactly like a ``"dense"`` run, plus an in-memory BM25 index.
-- **EmbeddingFaithfulnessScorer is always wired in**: it is dependency-free
-  and safe by construction (see its own module docstring), so there is no
-  reason to make the CLI user opt in explicitly. It is still just a proxy,
-  not real RAGAS — this is unchanged from ExperimentRunner's own documented
-  limitation and is not hidden from the printed summary.
+- **faithfulness_scorer is selected via ``ExperimentConfig.faithfulness_scorer``**
+  (Sprint 5; default ``"embedding"`` for backward compatibility with configs
+  written before this field existed): ``"embedding"`` wires in
+  ``EmbeddingFaithfulnessScorer`` (dependency-free, safe by construction —
+  see its own module docstring, still just a proxy, not real RAGAS);
+  ``"ragas"`` wires in ``RAGASFaithfulnessScorer`` (a real LLM-judge-based
+  scorer via Ollama, requiring the pinned ``ragas`` optional-dependency
+  group — see its own module docstring for exactly which versions and why);
+  ``"none"`` wires in no scorer at all. Unlike the embedding proxy, the
+  RAGAS scorer is NOT wired in unconditionally by default, because it
+  requires extra heavy dependencies and makes real LLM-judge calls (cost/
+  latency the embedding proxy does not have) — an explicit opt-in avoids
+  surprising a user who has not installed the ``ragas`` extra.
 - **dataset.path override is currently JSONFixtureDataset-only**: the
   dataset registry's ``get_dataset(name)`` always uses the class's default
   constructor (no arguments), so a path override can only be honored for
@@ -79,7 +87,7 @@ from eiger.core.models import DatasetConfig, ExperimentConfig
 from eiger.datasets import JSONFixtureDataset, get_dataset, list_datasets
 from eiger.experiments import ExperimentRunner
 from eiger.llm import OllamaLLM
-from eiger.metrics import EmbeddingFaithfulnessScorer, list_metrics
+from eiger.metrics import EmbeddingFaithfulnessScorer, RAGASFaithfulnessScorer, list_metrics
 from eiger.retrieval import SentenceTransformerEmbedder
 from eiger.utils.logging import get_logger
 from eiger.vector_stores import QdrantVectorStore
@@ -92,6 +100,7 @@ log = get_logger(__name__)
 _SUPPORTED_RETRIEVER_TYPES = {"dense", "sparse", "hybrid"}
 _SUPPORTED_VECTOR_STORES = {"qdrant"}
 _SUPPORTED_LLM_BACKENDS = {"ollama"}
+_SUPPORTED_FAITHFULNESS_SCORERS = {"embedding", "ragas", "none"}
 
 
 # ─── Config loading ────────────────────────────────────────────────────────────
@@ -187,8 +196,12 @@ def _build_runner(config: ExperimentConfig) -> ExperimentRunner:
 
     Raises:
         ConfigurationError: If ``retriever.type``, ``retriever.vector_store``,
-                            or ``llm.backend`` name a value with no
-                            implementation yet.
+                            ``llm.backend``, or ``faithfulness_scorer`` name a
+                            value with no implementation yet.
+        ImportError: If ``faithfulness_scorer: "ragas"`` is requested but the
+                     pinned ``ragas`` optional-dependency group is not
+                     installed (see RAGASFaithfulnessScorer's own docstring
+                     for the exact pins and an install command).
     """
     if config.retriever.type not in _SUPPORTED_RETRIEVER_TYPES:
         raise ConfigurationError(
@@ -205,6 +218,11 @@ def _build_runner(config: ExperimentConfig) -> ExperimentRunner:
             f"llm.backend='{config.llm.backend}' is not implemented yet "
             f"(supported: {sorted(_SUPPORTED_LLM_BACKENDS)})."
         )
+    if config.faithfulness_scorer not in _SUPPORTED_FAITHFULNESS_SCORERS:
+        raise ConfigurationError(
+            f"faithfulness_scorer='{config.faithfulness_scorer}' is not "
+            f"implemented yet (supported: {sorted(_SUPPORTED_FAITHFULNESS_SCORERS)})."
+        )
 
     settings = get_settings()
 
@@ -218,12 +236,30 @@ def _build_runner(config: ExperimentConfig) -> ExperimentRunner:
         max_tokens=config.llm.max_tokens,
     )
 
+    faithfulness_scorer: EmbeddingFaithfulnessScorer | RAGASFaithfulnessScorer | None
+    if config.faithfulness_scorer == "ragas":
+        # Constructed eagerly (not lazily inside run()) so a missing `ragas`
+        # extra fails fast, here, with an actionable ImportError — matching
+        # how SentenceTransformerEmbedder/QdrantVectorStore/OllamaLLM's own
+        # optional-dependency failures already surface (see main()'s
+        # docstring: both EigerError and ImportError are caught there).
+        faithfulness_scorer = RAGASFaithfulnessScorer(
+            embedder=embedder,
+            model_name=config.llm.model,
+            host=settings.ollama_host,
+            port=settings.ollama_port,
+        )
+    elif config.faithfulness_scorer == "none":
+        faithfulness_scorer = None
+    else:
+        faithfulness_scorer = EmbeddingFaithfulnessScorer(embedder)
+
     return ExperimentRunner(
         config=config,
         embedder=embedder,
         vector_store=vector_store,
         llm=llm,
-        faithfulness_scorer=EmbeddingFaithfulnessScorer(embedder),
+        faithfulness_scorer=faithfulness_scorer,
     )
 
 

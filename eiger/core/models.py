@@ -405,6 +405,20 @@ class ExperimentConfig(BaseModel):
     llm: LLMConfig
     # Default metrics cover the three primary EIGER KPIs.
     metrics: list[str] = Field(default_factory=lambda: ["ffr", "source_integrity", "ers"])
+    # Which faithfulness_scorer the CLI wires into ExperimentRunner (see
+    # eiger/__main__.py's _build_runner and eiger/metrics/README.md):
+    #   "embedding" — EmbeddingFaithfulnessScorer, a cosine-similarity proxy,
+    #                 no extra dependencies. Default, for backward
+    #                 compatibility with configs written before Sprint 5.
+    #   "ragas"     — RAGASFaithfulnessScorer, a real LLM-judge-based scorer
+    #                 via Ollama (see eiger/metrics/ragas_scorer.py). Requires
+    #                 the pinned `ragas` optional-dependency group.
+    #   "none"      — no faithfulness_scorer at all; "ffr" in metrics will
+    #                 then trigger ExperimentRunner's own unsupported-FFR
+    #                 warning and always score 0.0.
+    faithfulness_scorer: str = Field(
+        default="embedding", description="embedding | ragas | none"
+    )
     output_dir: str = Field(default="results/")
     description: str = Field(default="")
 

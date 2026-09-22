@@ -22,19 +22,22 @@ Importing this module is the only action required to activate the metrics: all
 five classes are automatically registered in the metric registry so they can
 be retrieved by name via ``get_metric("ffr")`` etc.
 
-This package also exposes ``EmbeddingFaithfulnessScorer``, a lightweight,
-LLM-judge-free proxy for the RAGAS-style faithfulness/answer-correctness
-signal that FFRMetric needs (see eiger.metrics.heuristic_scorer for the full
-rationale and its documented limitations). It is NOT a BaseMetric and is
-deliberately NOT registered in the metric registry — it produces raw scores
-to merge into EvaluationRecord.metrics *before* metrics are computed, rather
-than a reportable MetricScore itself. Pass an instance of it as
-ExperimentRunner's ``faithfulness_scorer`` argument.
+This package also exposes two ``faithfulness_scorer`` implementations for
+``ExperimentRunner`` — neither is a ``BaseMetric``, and neither is
+registered in the metric registry; both produce raw scores merged into
+``EvaluationRecord.metrics`` *before* metrics are computed, rather than a
+reportable ``MetricScore`` itself:
+
+  - ``EmbeddingFaithfulnessScorer`` — a lightweight, LLM-judge-free proxy
+    using cosine similarity (see eiger.metrics.heuristic_scorer for the full
+    rationale and its documented limitations). The CLI's default.
+  - ``RAGASFaithfulnessScorer`` — real RAGAS scoring via an Ollama LLM judge
+    (added Sprint 5; see eiger.metrics.ragas_scorer for the exact pinned
+    dependency versions this requires and why). Opt-in via
+    ``ExperimentConfig.faithfulness_scorer: "ragas"``.
 
 What this package does NOT do:
   - Run the RAG pipeline (see eiger.ingestion / eiger.retrieval).
-  - Compute real RAGAS (LLM-judge) faithfulness or answer-correctness scores;
-    EmbeddingFaithfulnessScorer is an explicitly-labeled proxy, not RAGAS.
   - Manage experiment orchestration (see eiger.experiments.ExperimentRunner).
 """
 
@@ -46,10 +49,11 @@ from eiger.metrics.ers import ERSMetric
 # Concrete metric implementations.
 from eiger.metrics.ffr import FFRMetric
 
-# Faithfulness proxy scorer (not a BaseMetric — see module docstring above).
+# Faithfulness scorers (not BaseMetric — see module docstring above).
 from eiger.metrics.heuristic_scorer import EmbeddingFaithfulnessScorer
 from eiger.metrics.prd import PRDMetric
 from eiger.metrics.prr import PRRMetric
+from eiger.metrics.ragas_scorer import RAGASFaithfulnessScorer
 from eiger.metrics.registry import get_metric, list_metrics, register_metric
 from eiger.metrics.source_integrity import SourceIntegrityMetric
 
@@ -76,4 +80,5 @@ __all__ = [
     "PRRMetric",
     "PRDMetric",
     "EmbeddingFaithfulnessScorer",
+    "RAGASFaithfulnessScorer",
 ]

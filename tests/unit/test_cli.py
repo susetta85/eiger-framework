@@ -167,6 +167,12 @@ class TestBuildRunner:
         with pytest.raises(ConfigurationError, match="llm.backend"):
             cli._build_runner(config)
 
+    def test_unsupported_faithfulness_scorer_raises(self) -> None:
+        config = _minimal_config()
+        config.faithfulness_scorer = "unknown_scorer"
+        with pytest.raises(ConfigurationError, match="faithfulness_scorer"):
+            cli._build_runner(config)
+
     def test_supported_config_builds_runner_with_expected_components(self) -> None:
         config = _minimal_config()
 
@@ -243,6 +249,76 @@ class TestBuildRunner:
         ):
             runner = cli._build_runner(config)
             assert runner is mock_runner_cls.return_value
+
+    def test_faithfulness_scorer_none_disables_scoring(self) -> None:
+        config = _minimal_config()
+        config.faithfulness_scorer = "none"
+
+        with (
+            patch("eiger.__main__.SentenceTransformerEmbedder"),
+            patch("eiger.__main__.QdrantVectorStore"),
+            patch("eiger.__main__.OllamaLLM"),
+            patch("eiger.__main__.EmbeddingFaithfulnessScorer") as mock_embedding_cls,
+            patch("eiger.__main__.RAGASFaithfulnessScorer") as mock_ragas_cls,
+            patch("eiger.__main__.ExperimentRunner") as mock_runner_cls,
+        ):
+            cli._build_runner(config)
+            mock_embedding_cls.assert_not_called()
+            mock_ragas_cls.assert_not_called()
+            assert mock_runner_cls.call_args.kwargs["faithfulness_scorer"] is None
+
+    def test_faithfulness_scorer_ragas_is_wired_in(self) -> None:
+        """
+        faithfulness_scorer="ragas" (Sprint 5) must construct
+        RAGASFaithfulnessScorer instead of EmbeddingFaithfulnessScorer,
+        passing the same embedder plus the configured LLM model/host/port.
+        """
+        config = _minimal_config()
+        config.faithfulness_scorer = "ragas"
+
+        with (
+            patch("eiger.__main__.SentenceTransformerEmbedder") as mock_embedder_cls,
+            patch("eiger.__main__.QdrantVectorStore"),
+            patch("eiger.__main__.OllamaLLM"),
+            patch("eiger.__main__.EmbeddingFaithfulnessScorer") as mock_embedding_cls,
+            patch("eiger.__main__.RAGASFaithfulnessScorer") as mock_ragas_cls,
+            patch("eiger.__main__.ExperimentRunner") as mock_runner_cls,
+        ):
+            mock_embedder = mock_embedder_cls.return_value
+            cli._build_runner(config)
+            mock_embedding_cls.assert_not_called()
+            mock_ragas_cls.assert_called_once_with(
+                embedder=mock_embedder,
+                model_name=config.llm.model,
+                host="127.0.0.1",
+                port=11434,
+            )
+            assert (
+                mock_runner_cls.call_args.kwargs["faithfulness_scorer"]
+                is mock_ragas_cls.return_value
+            )
+
+    def test_faithfulness_scorer_ragas_missing_dependency_raises_import_error(self) -> None:
+        """
+        If the pinned `ragas` extra is not installed, RAGASFaithfulnessScorer's
+        own constructor raises ImportError — _build_runner must let it
+        propagate unchanged (main() already catches ImportError, per its
+        own docstring), not swallow or rewrap it.
+        """
+        config = _minimal_config()
+        config.faithfulness_scorer = "ragas"
+
+        with (
+            patch("eiger.__main__.SentenceTransformerEmbedder"),
+            patch("eiger.__main__.QdrantVectorStore"),
+            patch("eiger.__main__.OllamaLLM"),
+            patch(
+                "eiger.__main__.RAGASFaithfulnessScorer",
+                side_effect=ImportError("pip install ragas==0.2.15 ..."),
+            ),
+        ):
+            with pytest.raises(ImportError, match="ragas"):
+                cli._build_runner(config)
 
 
 # ─── _cmd_run ───────────────────────────────────────────────────────────────────

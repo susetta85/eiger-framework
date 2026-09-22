@@ -50,7 +50,7 @@ The proposal's experimental design has 8 phases (0–7). Status below reflects w
 
 | Phase | Description | Status |
 |---|---|---|
-| **0 — Ethical protocol & threat model** | Define adversary, sensitivity classes, containment rules, go/no-go criteria before any corpus work. | **Partially done, not yet formalized in this repo.** The team's `Spunti fasi di lavoro.docx` already contains a full Threat Model Card and ethics protocol (condensed in Section 4 below). It has not yet been turned into a versioned `docs/ETHICS_AND_THREAT_MODEL.md` in this codebase — proposed as a Sprint 4 task (Section 9). |
+| **0 — Ethical protocol & threat model** | Define adversary, sensitivity classes, containment rules, go/no-go criteria before any corpus work. | **Formalized in this repo as of Sprint 4** — see [`docs/ETHICS_AND_THREAT_MODEL.md`](ETHICS_AND_THREAT_MODEL.md), which condenses the team's `Spunti fasi di lavoro.docx` (also summarized in Section 4 below) and proposes a go/no-go checklist plus a `risk_level`/`sensitivity_class` field mapping (pending team ratification and implementation, respectively). |
 | **1 — Clean/sound corpus** | ~1,000 journalistic documents across 3–4 domains, with metadata (source, date, domain, claims, reliability, redundancy). | **Partially done, via a different mechanism than planned.** `eiger.datasets` (Snopes/AVeriTeC/PolitiFact/FactCheck.org loaders) supplies verified-true claims, not full journalistic articles, and does not yet track domain redundancy/reliability metadata at the corpus level. Separately, the team's Mistral pipeline has already processed 6,591 claims across exactly this kind of domain taxonomy (Section 7). |
 | **2 — Vector void mapping** | Identify low-coverage/low-redundancy semantic areas of the corpus. | **Not implemented.** No tooling in `eiger/` computes corpus density or redundancy per topic/subtopic. |
 | **3 — Controlled poisoning (0/1/3/5/10%)** | Insert a progressive share of manipulated documents; manipulation types include numeric shift, date shift, causal inversion, false attribution, decontextualized citation. | **Partially implemented.** `eiger/attacks/` implements 4 of the 6 manipulation types in the project's own taxonomy (Section 5) as deterministic, seeded, non-LLM edits; `AttackConfig.poison_rate` supports arbitrary rates but no experiment has yet swept 0/1/3/5/10% systematically. |
@@ -64,6 +64,8 @@ The proposal's experimental design has 8 phases (0–7). Status below reflects w
 ## 4. Threat Model Summary
 
 Condensed from `Spunti fasi di lavoro.docx` (Fase 0). The full text (system description, asset list, adversary capability levels, attack-vector taxonomy, domain risk cards) should be preserved verbatim in the shared project folder; this is a working summary for engineering purposes.
+
+**As of Sprint 4, this summary has been formalized into its own versioned document: [`docs/ETHICS_AND_THREAT_MODEL.md`](ETHICS_AND_THREAT_MODEL.md).** That file is now the canonical engineering reference (it also adds a proposed go/no-go phase checklist and a `risk_level`/`sensitivity_class` field mapping); this section remains as a shorter in-context summary and should stay consistent with it.
 
 **System in scope:** a simulated newsroom/fact-checking desk querying a local RAG system (corpus → embedding → vector store → retriever → LLM → answer with cited sources). Entirely local/offline by design (privacy, containment).
 
@@ -88,7 +90,7 @@ Rule: when in doubt between two classes, apply the more restrictive one.
 
 **Publication rule:** poisoned/manipulated corpus items are never published in reusable form; only pipeline/logging/auditing/defense code is released, plus abstracted or heavily sanitized examples in any paper.
 
-*Sprint 4 task:* turn this section (and the full source document) into a standalone, versioned `docs/ETHICS_AND_THREAT_MODEL.md`, including the full Threat Model Card and the go/no-go checklist for moving between corpus phases — see Section 9.
+*Sprint 4 task, done:* this section (and the source document's condensed content) is now also available as a standalone, versioned [`docs/ETHICS_AND_THREAT_MODEL.md`](ETHICS_AND_THREAT_MODEL.md), including a proposed go/no-go checklist for moving between corpus phases — see Section 9.
 
 ---
 
@@ -116,12 +118,12 @@ This is the project's canonical manipulation taxonomy (from the team's `03_Codeb
 | FFR (Faithful Falsehood Rate) | Not named identically in the proposal, but is EIGER's own operationalization of the proposal's central "faithful ≠ truthful" dissociation (RQ2/H2) | ✅ Implemented (`eiger/metrics/ffr.py`) — heuristic faithfulness proxy caveat applies |
 | SI / SIS (Source Integrity (Score)) | "Source Integrity Score" — source-level integrity, distinct from answer-level faithfulness | ✅ Implemented (`eiger/metrics/source_integrity.py`, NLI-based, falls back to 0.0 without `transformers`/`torch`) — name matches the proposal's SIS almost exactly |
 | ERS (Epistemic Risk Score) | Not explicitly named in the proposal under this name; conceptually related to the proposal's plausibility/verification-difficulty/editorial-risk annotation dimensions | ✅ Implemented (`eiger/metrics/`, weighted combination of `PoisonAnnotation` dimensions) |
-| PRR@k (Poisoned Retrieval Rate) | `# queries with ≥1 poisoned doc in top-k / # total queries` | ❌ Not implemented as a named aggregate metric — computable today from `RetrievalResult.contains_poisoned` across a batch of queries, just not wired up as a registered `BaseMetric` |
-| PRD@1 (Poisoned Rank-1 Dominance) | `# queries where the poisoned doc is rank 1 / # total queries` | ❌ Not implemented — same gap as PRR@k |
+| PRR@k (Poisoned Retrieval Rate) | `# queries with ≥1 poisoned doc in top-k / # total queries` | ✅ **Implemented (Sprint 4)** — `PRRMetric` (`eiger/metrics/prr.py`), registered as `"prr"` |
+| PRD@1 (Poisoned Rank-1 Dominance) | `# queries where the poisoned doc is rank 1 / # total queries` | ✅ **Implemented (Sprint 4)** — `PRDMetric` (`eiger/metrics/prd.py`), registered as `"prd"` |
 | PCS (Poisoned Context Sensitivity) | `Δ output_score` when the suspect context is removed | ❌ Not implemented — requires a counterfactual re-generation step (generate with vs. without the suspect document), not present in `eiger/experiments/` today |
 | EVD (Epistemic Vigilance Drop) | `P(verify \| no citation) − P(verify \| citation)` | ❌ Not implemented — requires the human-in-the-loop study (Section 8); this is fundamentally a human-subjects measurement, not a pipeline metric |
 
-**Sprint 4 candidate:** PRR@k and PRD@1 are the cheapest wins here — both are pure aggregations over data EIGER already produces (`RetrievalResult.contains_poisoned`/rank) and need no new infrastructure, just a new `BaseMetric` implementation plus an experiment-level (not per-record) aggregation hook.
+**Sprint 4, done:** PRR@k and PRD@1 were the cheapest wins here — both were pure aggregations over data EIGER already produces (`RetrievalResult.contains_poisoned`/rank) and needed no new infrastructure, just a new `BaseMetric` implementation each (`eiger/metrics/prr.py`, `eiger/metrics/prd.py`).
 
 ---
 
@@ -163,8 +165,8 @@ Concrete, actionable deltas between the full research proposal and the current c
 
 | Task | Depends on | Suggested Sprint |
 |---|---|---|
-| Formalize `docs/ETHICS_AND_THREAT_MODEL.md` (Section 4, full text) | — | 4 |
-| Add `PRR@k`/`PRD@1` as registered `BaseMetric` implementations | Existing `RetrievalResult` data | 4 |
+| ~~Formalize `docs/ETHICS_AND_THREAT_MODEL.md` (Section 4, full text)~~ | — | ~~4~~ **Done (Sprint 4)** — condensed version + proposed go/no-go checklist and `risk_level`/`sensitivity_class` field mapping; full verbatim source text (asset list, adversary capability levels, attack-vector taxonomy, domain risk cards) remains in the shared project folder, not reproduced here — see the new doc's own §0 |
+| ~~Add `PRR@k`/`PRD@1` as registered `BaseMetric` implementations~~ | Existing `RetrievalResult` data | ~~4~~ **Done (Sprint 4)** — `eiger/metrics/prr.py`, `eiger/metrics/prd.py` |
 | Add `risk_level`/`sensitivity_class` fields to `Claim`/`Document` metadata | Threat model doc (for defining the field's allowed values authoritatively) | 4 |
 | Decide + implement ingestion path for the Mistral-generated corpus (Section 7) | Team decision on loader-vs-attack framing | 4/5 |
 | Implement `CherryPickingAttack` (M05) and `MissingContextAttack` (M06) | Possible `BaseAttack` contract extension | 4/5 |

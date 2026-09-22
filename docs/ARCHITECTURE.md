@@ -25,7 +25,7 @@
 
 EIGER (Epistemic Integrity Gauge for Epistemic Robustness) is a research framework for measuring how susceptible Retrieval-Augmented Generation (RAG) systems are to corpus poisoning attacks. The companion benchmark suite is called EIBench.
 
-**Project claim and research questions.** This document describes the engineering architecture. The project's actual research claim, its five research questions (RQ1–RQ5) and companion hypotheses (H1–H5), the full threat model, the manipulation taxonomy, and an honest gap analysis against the multidisciplinary research proposal are maintained in [`docs/CLAIM_AND_RESEARCH_QUESTIONS.md`](CLAIM_AND_RESEARCH_QUESTIONS.md) — read that document first if you are new to the project.
+**Project claim and research questions.** This document describes the engineering architecture. The project's actual research claim, its five research questions (RQ1–RQ5) and companion hypotheses (H1–H5), a condensed threat model, the manipulation taxonomy, and an honest gap analysis against the multidisciplinary research proposal are maintained in [`docs/CLAIM_AND_RESEARCH_QUESTIONS.md`](CLAIM_AND_RESEARCH_QUESTIONS.md) — read that document first if you are new to the project. The full adversary model, sensitivity classes, risk levels, and a go/no-go checklist between corpus phases now live in their own standalone reference, [`docs/ETHICS_AND_THREAT_MODEL.md`](ETHICS_AND_THREAT_MODEL.md).
 
 The framework is organized around three guiding principles:
 

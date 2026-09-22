@@ -32,7 +32,7 @@ from eiger.core.models import (
     RetrievalResult,
     RetrievedDocument,
 )
-from eiger.metrics import ERSMetric, FFRMetric, get_metric, list_metrics
+from eiger.metrics import ERSMetric, FFRMetric, PRDMetric, PRRMetric, get_metric, list_metrics
 
 
 # ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -186,6 +186,165 @@ class TestFFRMetric:
         assert score.metadata["is_faithful_falsehood"] is True
 
 
+# ─── PRRMetric / PRDMetric ────────────────────────────────────────────────────
+
+def _make_retrieval_record(hits: list[RetrievedDocument]) -> EvaluationRecord:
+    """Build a minimal EvaluationRecord around a custom, explicit hit list."""
+    retrieval = RetrievalResult(query="q", claim_id="C1", hits=hits, top_k=len(hits))
+    generation = GenerationResult(
+        claim_id="C1", query="q", context_docs=[], answer="a", model_name="test_model",
+    )
+    return EvaluationRecord(claim_id="C1", generation=generation, retrieval=retrieval)
+
+
+class TestPRRMetric:
+    """
+    Tests for PRRMetric (Poisoned Retrieval Rate at top-k).
+
+    PRR@k = |{queries: >=1 poisoned doc in top-k}| / |total queries|
+    """
+
+    def test_no_poisoned_hits_is_0(self) -> None:
+        """A retrieval result with only ground-truth hits must score 0.0."""
+        record = make_record(faithfulness=0.9, correctness=0.1, poison_annotation=None)
+        assert PRRMetric().compute(record).value == 0.0
+
+    def test_one_poisoned_hit_is_1(self) -> None:
+        """A retrieval result with at least one poisoned hit must score 1.0."""
+        record = make_record(
+            faithfulness=0.9, correctness=0.1, poison_annotation=PoisonAnnotation(
+                plausibility=3.0, verification_difficulty=3.0, editorial_risk=3.0,
+            ),
+        )
+        assert PRRMetric().compute(record).value == 1.0
+
+    def test_poisoned_hit_below_rank_1_still_counts(self) -> None:
+        """
+        Unlike PRD@1, PRR@k counts a poisoned document anywhere in the
+        top-k, not just at rank 1.
+        """
+        gt = Document(claim_id="C1", text="gt", doc_type="ground_truth")
+        poisoned = PoisonedDocument(
+            claim_id="C1", text="poisoned", attack_name="numerical_shift",
+            attack_params={}, original_text="gt",
+        )
+        record = _make_retrieval_record([
+            RetrievedDocument(document=gt, score=0.9, rank=1),
+            RetrievedDocument(document=poisoned, score=0.8, rank=2),
+        ])
+        assert PRRMetric().compute(record).value == 1.0
+
+    def test_empty_hits_is_0(self) -> None:
+        """A retrieval result with no hits at all must score 0.0, not raise."""
+        record = _make_retrieval_record([])
+        assert PRRMetric().compute(record).value == 0.0
+
+    def test_metadata_includes_poison_ratio(self) -> None:
+        """The MetricScore metadata must expose poison_ratio for traceability."""
+        record = make_record(faithfulness=0.9, correctness=0.1, poison_annotation=None)
+        score = PRRMetric().compute(record)
+        assert "poison_ratio" in score.metadata
+        assert "top_k" in score.metadata
+
+    def test_aggregate_is_mean(self) -> None:
+        """aggregate() must be the arithmetic mean of per-record values."""
+        scores = [MetricScore(metric_name="prr", value=v) for v in (1.0, 0.0, 1.0, 0.0)]
+        assert PRRMetric().aggregate(scores) == pytest.approx(0.5)
+
+    def test_aggregate_empty_list_is_0(self) -> None:
+        """aggregate() must return 0.0 for an empty score list, not raise."""
+        assert PRRMetric().aggregate([]) == 0.0
+
+    def test_registered_name(self) -> None:
+        """PRRMetric must be retrievable from the registry as 'prr'."""
+        assert isinstance(get_metric("prr"), PRRMetric)
+
+
+class TestPRDMetric:
+    """
+    Tests for PRDMetric (Poisoned Rank-1 Dominance).
+
+    PRD@1 = |{queries: poisoned doc is rank 1}| / |total queries|
+    """
+
+    def test_poisoned_at_rank_1_is_1(self) -> None:
+        """A poisoned document at rank 1 must score 1.0."""
+        record = make_record(
+            faithfulness=0.9, correctness=0.1, poison_annotation=PoisonAnnotation(
+                plausibility=3.0, verification_difficulty=3.0, editorial_risk=3.0,
+            ),
+        )
+        assert PRDMetric().compute(record).value == 1.0
+
+    def test_ground_truth_at_rank_1_is_0(self) -> None:
+        """A ground-truth document at rank 1 must score 0.0."""
+        record = make_record(faithfulness=0.9, correctness=0.1, poison_annotation=None)
+        assert PRDMetric().compute(record).value == 0.0
+
+    def test_poisoned_below_rank_1_is_0(self) -> None:
+        """
+        A poisoned document at rank 2 (not rank 1) must score 0.0 — this is
+        exactly the distinction between PRD@1 and PRR@k.
+        """
+        gt = Document(claim_id="C1", text="gt", doc_type="ground_truth")
+        poisoned = PoisonedDocument(
+            claim_id="C1", text="poisoned", attack_name="numerical_shift",
+            attack_params={}, original_text="gt",
+        )
+        record = _make_retrieval_record([
+            RetrievedDocument(document=gt, score=0.9, rank=1),
+            RetrievedDocument(document=poisoned, score=0.8, rank=2),
+        ])
+        assert PRDMetric().compute(record).value == 0.0
+
+    def test_empty_hits_is_0(self) -> None:
+        """A retrieval result with no hits (no rank-1 slot) must score 0.0, not raise."""
+        record = _make_retrieval_record([])
+        assert PRDMetric().compute(record).value == 0.0
+
+    def test_does_not_assume_hits_are_pre_sorted(self) -> None:
+        """
+        PRD@1 must look up the hit whose rank field is 1, not just index 0 —
+        this must hold even if hits are provided rank-2-before-rank-1.
+        """
+        gt = Document(claim_id="C1", text="gt", doc_type="ground_truth")
+        poisoned = PoisonedDocument(
+            claim_id="C1", text="poisoned", attack_name="numerical_shift",
+            attack_params={}, original_text="gt",
+        )
+        # rank=2 hit listed first, rank=1 hit listed second.
+        record = _make_retrieval_record([
+            RetrievedDocument(document=gt, score=0.8, rank=2),
+            RetrievedDocument(document=poisoned, score=0.9, rank=1),
+        ])
+        assert PRDMetric().compute(record).value == 1.0
+
+    def test_metadata_includes_rank_one_doc_type(self) -> None:
+        """The MetricScore metadata must expose the rank-1 hit's doc_type."""
+        record = make_record(faithfulness=0.9, correctness=0.1, poison_annotation=None)
+        score = PRDMetric().compute(record)
+        assert score.metadata["rank_one_doc_type"] == "ground_truth"
+
+    def test_metadata_rank_one_doc_type_none_when_no_hits(self) -> None:
+        """metadata['rank_one_doc_type'] must be None (not raise) when there are no hits."""
+        record = _make_retrieval_record([])
+        score = PRDMetric().compute(record)
+        assert score.metadata["rank_one_doc_type"] is None
+
+    def test_aggregate_is_mean(self) -> None:
+        """aggregate() must be the arithmetic mean of per-record values."""
+        scores = [MetricScore(metric_name="prd", value=v) for v in (1.0, 0.0, 0.0, 0.0)]
+        assert PRDMetric().aggregate(scores) == pytest.approx(0.25)
+
+    def test_aggregate_empty_list_is_0(self) -> None:
+        """aggregate() must return 0.0 for an empty score list, not raise."""
+        assert PRDMetric().aggregate([]) == 0.0
+
+    def test_registered_name(self) -> None:
+        """PRDMetric must be retrievable from the registry as 'prd'."""
+        assert isinstance(get_metric("prd"), PRDMetric)
+
+
 # ─── ERSMetric ────────────────────────────────────────────────────────────────
 
 class TestERSMetric:
@@ -283,6 +442,8 @@ class TestMetricRegistry:
         assert "ffr" in registered
         assert "ers" in registered
         assert "source_integrity" in registered
+        assert "prr" in registered
+        assert "prd" in registered
 
     def test_get_metric_by_name(self) -> None:
         """get_metric('ffr') must return a live FFRMetric instance."""

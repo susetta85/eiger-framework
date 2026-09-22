@@ -1,7 +1,7 @@
 """
 Evaluation metrics for epistemic integrity in RAG systems.
 
-This package exposes the three built-in metrics used by EIBench:
+This package exposes the built-in metrics used by EIBench:
 
   - FFRMetric          — Faithful Falsehood Rate: fraction of RAG answers that
                          are internally consistent with (possibly poisoned) context
@@ -11,9 +11,15 @@ This package exposes the three built-in metrics used by EIBench:
                          difficulty, editorial risk) into a single [0,1] scalar.
   - SourceIntegrityMetric — NLI-based measure of factual consistency between
                             retrieved documents and ground-truth claims.
+  - PRRMetric          — Poisoned Retrieval Rate at top-k: fraction of queries
+                         whose retrieved top-k documents include at least one
+                         poisoned document (added Sprint 4; see eiger.metrics.prr).
+  - PRDMetric          — Poisoned Rank-1 Dominance: fraction of queries whose
+                         single rank-1 retrieved document is a poisoned
+                         document (added Sprint 4; see eiger.metrics.prd).
 
-Importing this module is the only action required to activate the metrics: the
-three classes are automatically registered in the metric registry so they can
+Importing this module is the only action required to activate the metrics: all
+five classes are automatically registered in the metric registry so they can
 be retrieved by name via ``get_metric("ffr")`` etc.
 
 This package also exposes ``EmbeddingFaithfulnessScorer``, a lightweight,
@@ -42,6 +48,8 @@ from eiger.metrics.ffr import FFRMetric
 
 # Faithfulness proxy scorer (not a BaseMetric — see module docstring above).
 from eiger.metrics.heuristic_scorer import EmbeddingFaithfulnessScorer
+from eiger.metrics.prd import PRDMetric
+from eiger.metrics.prr import PRRMetric
 from eiger.metrics.registry import get_metric, list_metrics, register_metric
 from eiger.metrics.source_integrity import SourceIntegrityMetric
 
@@ -53,6 +61,8 @@ from eiger.metrics.source_integrity import SourceIntegrityMetric
 register_metric(FFRMetric)
 register_metric(ERSMetric)
 register_metric(SourceIntegrityMetric)
+register_metric(PRRMetric)
+register_metric(PRDMetric)
 
 # ─── Explicit public surface ──────────────────────────────────────────────────
 # Only symbols listed here are considered stable public API.
@@ -63,5 +73,7 @@ __all__ = [
     "FFRMetric",
     "ERSMetric",
     "SourceIntegrityMetric",
+    "PRRMetric",
+    "PRDMetric",
     "EmbeddingFaithfulnessScorer",
 ]

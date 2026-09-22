@@ -205,7 +205,7 @@ make ollama-pull
 ```bash
 eiger list-datasets     # averitec, factcheck_org, json_fixture, politifact, snopes
 eiger list-attacks      # numerical_shift, attribution_switch, date_manipulation, causal_manipulation
-eiger list-metrics      # ffr, ers, source_integrity
+eiger list-metrics      # ers, ffr, prd, prr, source_integrity
 
 eiger run experiments/config.yaml
 ```
@@ -412,6 +412,8 @@ The same pattern applies to datasets, metrics, retrievers, and LLM backends. See
 | [docs/REPRODUCING.md](docs/REPRODUCING.md) | Step-by-step guide to reproduce all paper results |
 | [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | How to add attacks, metrics, datasets, and LLM backends |
 | [docs/DATASETS.md](docs/DATASETS.md) | Supported datasets, download instructions, schemas |
+| [docs/CLAIM_AND_RESEARCH_QUESTIONS.md](docs/CLAIM_AND_RESEARCH_QUESTIONS.md) | Project claim, RQ1–RQ5/H1–H5, manipulation taxonomy, gap analysis |
+| [docs/ETHICS_AND_THREAT_MODEL.md](docs/ETHICS_AND_THREAT_MODEL.md) | Adversary model, sensitivity classes, risk levels, go/no-go phase checklist |
 | [eiger/core/README.md](eiger/core/README.md) | Domain models and abstract interfaces |
 | [eiger/attacks/README.md](eiger/attacks/README.md) | Attack taxonomy and implementation details |
 | [eiger/metrics/README.md](eiger/metrics/README.md) | Metric definitions, formulas, and implementation notes |

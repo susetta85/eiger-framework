@@ -1,6 +1,6 @@
 # EIGER Datasets — Reference Guide
 
-> Version: 0.1.0 | Sprint 3 complete (dataset layer) — Sprint 4 planned
+> Version: 0.1.0 | Sprint 3 complete (dataset layer) — all five loaders below implemented and registered
 
 ---
 

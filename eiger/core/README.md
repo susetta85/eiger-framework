@@ -61,7 +61,7 @@ no infrastructure dependencies.
 | Model | Key fields | Purpose |
 |---|---|---|
 | `ExperimentConfig` | `experiment_id`, `seed`, `dataset`, `attacks`, `retriever`, `llm`, `metrics`, `output_dir` | Complete, validated specification for one experiment run. Loaded from YAML; serialized to JSON alongside results for provenance. Exposes `config_hash` (SHA-256 fingerprint) for reproducibility tracking. |
-| `DatasetConfig` | `name`, `split`, `max_claims`, `path` | Dataset selection: `averitec`, `politifact`, or `json_fixture`. |
+| `DatasetConfig` | `name`, `split`, `max_claims`, `path` | Dataset selection: `averitec`, `politifact`, `factcheck_org`, `snopes`, or `json_fixture`. |
 | `AttackConfig` | `name`, `poison_rate`, `params` | Attack selection and per-attack hyperparameters. `name` must be registered in the attack registry. |
 | `RetrieverConfig` | `type`, `embedder`, `vector_store`, `top_k`, `collection_name` | Retriever selection: `dense`, `sparse`, or `hybrid`. Defaults to `sentence-transformers/all-MiniLM-L6-v2` over Qdrant. |
 | `LLMConfig` | `backend`, `model`, `temperature`, `max_tokens` | LLM backend selection: `ollama` or `openai`. |
@@ -77,13 +77,13 @@ orchestration code.
 
 | ABC | Key abstract methods | Primary implementors |
 |---|---|---|
-| `BaseAttack` | `apply(document, seed, **kwargs) -> PoisonedDocument`; `describe() -> dict` | `NumericalShiftAttack`, `DateManipulationAttack`, `AttributionSwitchAttack`, `CausalManipulationAttack` in `eiger.attacks` |
+| `BaseAttack` | `apply(document, seed, **kwargs) -> PoisonedDocument`; `describe() -> dict` | `NumericalShiftAttack`, `DateManipulationAttack`, `AttributionSwitchAttack`, `CausalManipulationAttack`, `CherryPickingAttack`, `MissingContextAttack` in `eiger.attacks` (M01–M06 taxonomy, complete as of Sprint 5) |
 | `BaseDataset` | `load(split, max_claims) -> list[Claim]`; `download(target_dir)`; `content_hash` (property) | Dataset loaders in `eiger.datasets` |
 | `BaseEmbedder` | `encode(texts) -> list[list[float]]`; `embedding_dim` (property) | Embedder adapters in `eiger.retrieval` |
 | `BaseVectorStore` | `create_collection(name, dim)`; `reset_collection(name, dim)`; `upsert(collection, documents, vectors)`; `search(collection, query_vector, top_k)` | Qdrant adapter in `eiger.vector_stores` |
 | `BaseRetriever` | `retrieve(query, claim_id, top_k) -> RetrievalResult` | Dense/sparse/hybrid retrievers in `eiger.retrieval` |
 | `BaseLLM` | `generate(prompt, **kwargs) -> str`; `build_rag_prompt(query, context_docs) -> str` | Ollama and OpenAI adapters in `eiger.llm` |
-| `BaseMetric` | `compute(record) -> MetricScore` | `FFRMetric`, `ERSMetric`, `SourceIntegrityMetric` in `eiger.metrics`. Default implementations of `compute_batch` and `aggregate` are provided by the base class. |
+| `BaseMetric` | `compute(record) -> MetricScore` | `FFRMetric`, `ERSMetric`, `SourceIntegrityMetric`, `PRRMetric`, `PRDMetric` in `eiger.metrics`. Default implementations of `compute_batch` and `aggregate` are provided by the base class. |
 
 ---
 

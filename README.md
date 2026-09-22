@@ -4,8 +4,8 @@
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-487%20passing-brightgreen.svg)](tests/)
-[![Sprint](https://img.shields.io/badge/sprint-4%20planned-blue.svg)](docs/CLAIM_AND_RESEARCH_QUESTIONS.md)
+[![Tests](https://img.shields.io/badge/tests-passing%20(100%25%20coverage)-brightgreen.svg)](tests/)
+[![Sprint](https://img.shields.io/badge/sprint-5-blue.svg)](docs/CLAIM_AND_RESEARCH_QUESTIONS.md)
 
 ---
 
@@ -90,8 +90,8 @@ EIBench is a six-layer pipeline. Each layer is independently extensible via a pl
 | Layer | Component | Status |
 |-------|-----------|--------|
 | 1 | Corpus Builder + Ingestion Pipeline (embed + upsert) | ✅ Sprint 1 + 2 |
-| 2 | Poisoning Engine (4 attack types) | ✅ Sprint 1 |
-| 3 | Dense retrieval (Qdrant + sentence-transformers); Sparse (BM25) retrieval | ✅ Sprint 2 + Sprint 4 |
+| 2 | Poisoning Engine (6 attack types — M01–M06 taxonomy complete) | ✅ Sprint 1 → 5 |
+| 3 | Dense retrieval (Qdrant + sentence-transformers); Sparse (BM25); Hybrid (RRF fusion) | ✅ Sprint 2 + 4 + 5 |
 | 4 | Llama 3.1 / Mistral via Ollama | ✅ Sprint 2 |
 | 5 | FFR, ERS implemented; SI (NLI) falls back to 0.0 without `transformers`/`torch`; FFR's faithfulness signal is a heuristic embedding proxy, not RAGAS yet | ✅ Sprint 1 + 2 |
 | 6 | `ExperimentRunner` orchestration + `results.json` provenance | ✅ Sprint 2 |
@@ -101,9 +101,10 @@ EIBench is a six-layer pipeline. Each layer is independently extensible via a pl
 | 10 | `AVeriTecDataset` (Supported-label subset, evidence-question context_query — no LLM needed) | ✅ Sprint 3 — loader only, `download()` is a guard not a fetcher; not yet independently reviewed, see `docs/DATASETS.md` §3 |
 | 11 | `PolitiFactDataset` (LIAR "true"-label subset, templated context_query — no LLM needed) | ✅ Sprint 3 — loader only, `download()` is a guard not a fetcher; not yet independently reviewed, see `docs/DATASETS.md` §4 |
 | 12 | `FactCheckDataset` (CheckThat! mirror, "true"-verdict subset, templated context_query — no LLM needed) | ✅ Sprint 3 — loader only, `download()` is a guard not a fetcher, raw format assumed JSONL (not independently verified); not yet independently reviewed, see `docs/DATASETS.md` §5 |
-| — | Hybrid (RRF) retrieval, OpenAI LLM backend, real RAGAS-based faithfulness scorer, degradation curves / HTML report | 🔄 Future sprints |
+| — | OpenAI LLM backend, real RAGAS-based faithfulness scorer, degradation curves / HTML report | 🔄 Future sprints |
 | 13 | Project claim, RQ1–RQ5/H1–H5, threat model, M01–M06 taxonomy, and Sprint 4/5 gap analysis documented | ✅ Sprint 3→4 — see `docs/CLAIM_AND_RESEARCH_QUESTIONS.md` |
 | 14 | `SparseRetriever` (BM25 via `rank-bm25`), selectable via `retriever.type: sparse` | ✅ Sprint 4 — see `eiger/retrieval/README.md` |
+| 15 | `HybridRetriever` (RRF fusion of dense + sparse), selectable via `retriever.type: hybrid` | ✅ Sprint 5 — see `eiger/retrieval/README.md` |
 
 ---
 
@@ -223,10 +224,10 @@ metrics: [ffr, ers, source_integrity]
 output_dir: results/baseline_v1
 ```
 
-Only `retriever.type: dense` or `sparse` (Sprint 4 — BM25, see
-`eiger/retrieval/README.md`), `retriever.vector_store: qdrant`, and
-`llm.backend: ollama` are implemented — the CLI raises a clear
-`ConfigurationError` for any other value (e.g. `hybrid` retrieval or an
+Only `retriever.type: dense`, `sparse` (Sprint 4 — BM25), or `hybrid`
+(Sprint 5 — RRF fusion, see `eiger/retrieval/README.md`),
+`retriever.vector_store: qdrant`, and `llm.backend: ollama` are implemented
+— the CLI raises a clear `ConfigurationError` for any other value (e.g. an
 `openai` backend, which the config schema already accepts for
 forward-compatibility but nothing implements yet).
 
@@ -278,10 +279,10 @@ eiger-framework/
 │   ├── attacks/              # Adversarial poisoning strategies
 │   ├── datasets/             # Dataset loaders (AVeriTeC, PolitiFact, …)
 │   ├── ingestion/            # Corpus builder
-│   ├── retrieval/            # Retrieval strategies (dense + sparse/BM25 implemented; hybrid planned)
+│   ├── retrieval/            # Retrieval strategies (dense, sparse/BM25, hybrid/RRF — all implemented)
 │   ├── vector_stores/        # Vector store adapters (Qdrant implemented; FAISS/Chroma planned)
 │   ├── llm/                  # LLM backends (Ollama implemented; OpenAI-compatible planned)
-│   ├── metrics/              # Evaluation metrics (FFR, SI, ERS, RAGAS)
+│   ├── metrics/              # Evaluation metrics (FFR, ERS, Source Integrity, PRR, PRD)
 │   ├── experiments/          # Experiment runner and orchestrator
 │   ├── config/               # Pydantic Settings
 │   └── utils/                # Logging, seeding, hashing

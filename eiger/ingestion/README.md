@@ -150,10 +150,12 @@ instance between both.
 
 ---
 
-## Dataset loading (still pending)
+## Dataset loading
 
-The current implementation accepts `claims: list[Claim]` directly — there is no
-`BaseDataset` implementation yet (`eiger/datasets/` is still empty). Real dataset
-loaders for AVeriTeC, PolitiFact, and FactCheck.org remain future work. The
-`CorpusBuilder` API is not expected to change; only the source of the `claims` list
-will differ once a loader exists.
+`CorpusBuilder` accepts `claims: list[Claim]` directly and has no dependency on
+where those claims came from. Since Sprint 3, `eiger.datasets` provides five
+registered `BaseDataset` loaders (`SnopesDataset`, `AVeriTecDataset`,
+`PolitiFactDataset`, `FactCheckDataset`, `JSONFixtureDataset`) — see
+`eiger/datasets/README.md` and `docs/DATASETS.md` for what each one does and its
+review status. `CorpusBuilder`'s own API did not need to change to support this:
+callers just pass whatever `dataset.load(...)` returns.

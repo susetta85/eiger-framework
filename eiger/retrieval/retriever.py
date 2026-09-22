@@ -50,9 +50,10 @@ What this module does NOT do:
   - It does not compute embeddings itself; that is BaseEmbedder's job.
   - It does not manage vector store connections or collections; that is
     BaseVectorStore's job (see QdrantVectorStore).
-  - It does not implement hybrid or sparse retrieval; a future
-    HybridRetriever would compose multiple BaseRetriever/BaseVectorStore
-    instances rather than extending this class.
+  - It does not implement hybrid or sparse retrieval itself — see
+    eiger/retrieval/sparse_retriever.py and
+    eiger/retrieval/hybrid_retriever.py (Sprint 5), which compose this
+    class rather than extending it.
 """
 
 from __future__ import annotations

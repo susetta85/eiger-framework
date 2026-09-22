@@ -19,9 +19,13 @@ Pipeline position
         ▼  retriever.type == "sparse":
         │     SparseRetriever.fit(corpus.all_documents)       — build BM25 index
         │   (vector store untouched — no Qdrant/embedder network calls at all)
+        ▼  retriever.type == "hybrid":
+        │     IngestionPipeline.ingest(corpus)                — embed + upsert (dense side)
+        │     HybridRetriever.fit(corpus.all_documents)       — build BM25 index (sparse side)
+        │   (both underlying indexes populated)
         │
         ▼  for each claim:
-        │     retriever.retrieve()  → RetrievalResult   (Dense- or SparseRetriever)
+        │     retriever.retrieve()  → RetrievalResult   (Dense-, Sparse-, or HybridRetriever)
         │     BaseLLM.build_rag_prompt() + generate() → GenerationResult
         │     [faithfulness_scorer(claim, generation)]  → optional RAGAS-style scores
         │   → EvaluationRecord
@@ -76,15 +80,17 @@ Design decisions
   be 0.0 for every record (faithfulness/correctness default to 0.0), which
   is NOT a valid experimental measurement and must not be reported as one.
 - **Retriever choice branches in two places, not via a factory**: ``__init__``
-  picks ``DenseRetriever`` or ``SparseRetriever`` based on
-  ``config.retriever.type``, and ``run()`` correspondingly either calls
-  ``ingestion_pipeline.ingest(corpus)`` (dense) or
-  ``SparseRetriever.fit(corpus.all_documents)`` (sparse) — see
+  picks ``DenseRetriever``, ``SparseRetriever``, or ``HybridRetriever`` (a
+  composition of both — see ``eiger/retrieval/hybrid_retriever.py``) based on
+  ``config.retriever.type``, and ``run()`` correspondingly calls
+  ``ingestion_pipeline.ingest(corpus)`` (dense side), ``retriever.fit(...)``
+  (sparse side), or **both** for ``"hybrid"`` — see
   ``eiger/retrieval/sparse_retriever.py``'s module docstring for why
   ``fit()`` cannot be folded into a common ``BaseRetriever`` method.
-  ``HybridRetriever`` (RRF fusion of both) remains future work; when it
-  lands, it will most likely need both branches to run together rather
-  than as an ``if``/``else``.
+  ``HybridRetriever.fit()`` is a thin passthrough to its internal
+  ``SparseRetriever.fit()``, so ``run()`` can call ``retriever.fit(...)``
+  uniformly for both ``"sparse"`` and ``"hybrid"`` without an `isinstance`
+  check.
 - **Fail loud, no per-claim error swallowing**: a single claim's retrieval
   or generation failure aborts the whole run (RetrievalError/GenerationError
   propagate unchanged). Silently skipping failed claims would silently bias
@@ -125,7 +131,7 @@ from eiger.core.models import (
 )
 from eiger.ingestion import CorpusBuilder, CorpusBuilderResult, IngestionPipeline
 from eiger.metrics import get_metric
-from eiger.retrieval import DenseRetriever, SparseRetriever
+from eiger.retrieval import DenseRetriever, HybridRetriever, SparseRetriever
 from eiger.utils.logging import get_logger
 from eiger.utils.seeding import seed_everything
 
@@ -204,10 +210,20 @@ class ExperimentRunner:
         # docstring for why it cannot read from BaseVectorStore) and is
         # populated via fit() in run(), once the corpus exists — unlike
         # DenseRetriever, which is fully usable as soon as the vector store
-        # is populated by ingestion_pipeline.ingest().
-        self.retriever: DenseRetriever | SparseRetriever
+        # is populated by ingestion_pipeline.ingest(). HybridRetriever needs
+        # both: its internal DenseRetriever is ready once the vector store
+        # is populated, and its internal SparseRetriever needs fit() — see
+        # run()'s "hybrid" branch below.
+        self.retriever: DenseRetriever | SparseRetriever | HybridRetriever
         if self.retriever_type == "sparse":
             self.retriever = SparseRetriever()
+        elif self.retriever_type == "hybrid":
+            self.retriever = HybridRetriever(
+                dense=DenseRetriever(
+                    embedder=embedder, vector_store=vector_store, collection=self.collection
+                ),
+                sparse=SparseRetriever(),
+            )
         else:
             self.retriever = DenseRetriever(
                 embedder=embedder, vector_store=vector_store, collection=self.collection
@@ -258,6 +274,15 @@ class ExperimentRunner:
             # module docstring); it does not touch the vector store at all,
             # so ingestion_pipeline.ingest() is skipped entirely — a
             # sparse-only run does not require Qdrant to be reachable.
+            self.retriever.fit(corpus.all_documents)  # type: ignore[union-attr]
+        elif self.retriever_type == "hybrid":
+            # Hybrid needs both indexes populated: the dense side reads from
+            # the vector store (like a pure "dense" run), and the sparse
+            # side needs the explicit document list (like a pure "sparse"
+            # run) — HybridRetriever.fit() is a passthrough to its internal
+            # SparseRetriever.fit(), so this call is uniform with the
+            # "sparse" branch above.
+            self.ingestion_pipeline.ingest(corpus)
             self.retriever.fit(corpus.all_documents)  # type: ignore[union-attr]
         else:
             self.ingestion_pipeline.ingest(corpus)

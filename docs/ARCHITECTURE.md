@@ -1,6 +1,6 @@
 # EIGER Framework — Architecture Reference
 
-> Version: 0.1.0 | Sprint 3 complete (dataset layer + CLI) — Sprint 4 planned
+> Version: 0.1.0 | Sprint 5 complete (M01–M06 attack taxonomy, hybrid retrieval, PRR@k/PRD@1 metrics, ethics/risk classification fields)
 > Package: `eiger` | Python >= 3.10
 
 ---
@@ -65,7 +65,7 @@ RAG poisoning/robustness is an active, fast-moving research area. This section p
 
 ### How EIGER/EIBench differs
 
-1. **Controlled, taxonomy-driven perturbation of verified-true documents, not adversarially-optimized injection or as-is naturally-occurring misinformation.** EIGER's four attacks (`numerical_shift`, `attribution_switch`, `causal_manipulation`, `date_manipulation` — Section 3's Layer 2/`eiger/attacks/`) each apply one specific, well-defined type of factual edit to a document whose original claim is independently verified true. This is a different threat model from PoisonedRAG's LLM-optimized injected text (designed purely to maximize retrieval+generation success) and from RAGuard's naturally-sampled misleading documents (which conflate many error types at once). The payoff is systematic per-error-type ablation — "which *kind* of factual corruption is most dangerous to a given RAG configuration" — rather than a single aggregate attack-success-rate number.
+1. **Controlled, taxonomy-driven perturbation of verified-true documents, not adversarially-optimized injection or as-is naturally-occurring misinformation.** EIGER's six attacks (`numerical_shift`, `attribution_switch`, `causal_manipulation`, `date_manipulation`, `cherry_picking`, `missing_context` — Section 3's Layer 2/`eiger/attacks/`, completing the project's M01–M06 taxonomy as of Sprint 5) each apply one specific, well-defined type of factual edit or omission to a document whose original claim is independently verified true. This is a different threat model from PoisonedRAG's LLM-optimized injected text (designed purely to maximize retrieval+generation success) and from RAGuard's naturally-sampled misleading documents (which conflate many error types at once). The payoff is systematic per-error-type ablation — "which *kind* of factual corruption is most dangerous to a given RAG configuration" — rather than a single aggregate attack-success-rate number.
 2. **FFR isolates a specific, narrow failure mode.** Faithful Falsehood Rate (Section 3's Layer 5/`eiger/metrics/ffr.py`) requires an answer to be *both* faithful to a (potentially poisoned) context *and* wrong relative to independently-verified ground truth. This is sharper than RAGTruth/RAGChecker/FaithJudge's general hallucination/faithfulness scoring: it does not ask "did the model hallucinate beyond its context" but "did the model over-trust a corrupted context, and how often does that happen per poisoning strategy." Source Integrity (SI) is deliberately kept as a separate, entailment-based axis so the project's core hypothesis — that faithfulness and source integrity diverge as poisoning increases — is directly testable rather than assumed.
 3. **Reproducible, multi-corpus, extensible tooling**, not a single-paper attack demo. Seeded determinism, git-commit/config-hash provenance on every result (Section 9), a registry-based plugin architecture across attacks/metrics/datasets/retrievers/LLM backends (Section 7), a CLI, and — as of Sprint 3 — five real fact-checking corpora with a common loading interface (`eiger.datasets`; see docs/DATASETS.md). This positions EIGER closer to the released-code contributions of PoisonedRAG/RAGTruth/RAGChecker (which is what made them reusable by others) than to a narrower single-attack proof of concept.
 
@@ -115,7 +115,7 @@ Applies one or more adversarial attacks to a fraction of the corpus (the `poison
 | Poisoning | Calls `BaseAttack.apply(document, seed)` per document |
 | Output | Returns `list[PoisonedDocument]`, each with full provenance |
 | Corpus update | Upserts poisoned documents into the vector store alongside originals |
-| Status | ✅ Sprint 1 — all four built-in attacks implemented and tested |
+| Status | ✅ Sprint 1 → 5 — all six built-in attacks (M01–M06 taxonomy) implemented and tested |
 
 ### Layer 3 — Retrieval (`eiger/retrieval/`, `eiger/vector_stores/`)
 
@@ -127,7 +127,7 @@ Given a `context_query` from a `Claim`, retrieves the top-k most similar documen
 | Vector search | Calls `BaseVectorStore.search()` returning ranked document dicts |
 | Result wrapping | Produces a `RetrievalResult` with ranked `RetrievedDocument` hits |
 | Poison detection | `RetrievalResult.contains_poisoned` and `poison_ratio` are derived properties |
-| Status | ✅ Sprint 2 — `DenseRetriever` via Qdrant implemented; ✅ Sprint 4 — `SparseRetriever` (BM25 via `rank-bm25`) implemented; `HybridRetriever` (RRF fusion) planned |
+| Status | ✅ Sprint 2 — `DenseRetriever` via Qdrant implemented; ✅ Sprint 4 — `SparseRetriever` (BM25 via `rank-bm25`) implemented; ✅ Sprint 5 — `HybridRetriever` (RRF fusion of both) implemented |
 
 ### Layer 4 — Generation (`eiger/llm/`)
 

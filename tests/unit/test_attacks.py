@@ -533,6 +533,70 @@ class TestCherryPickingAttack:
         assert result.text == "Unemployment fell to 4.1%."
         assert ".8%" not in result.text
 
+    def test_sentence_initial_clause_leaves_no_orphaned_comma(self) -> None:
+        """
+        Regression test: when the baseline clause opens the sentence (no
+        leading comma to consume, but a trailing comma separating it from
+        the rest of the sentence), the trailing comma must be removed too —
+        otherwise the poisoned text starts with a dangling ", ...".
+        """
+        doc = Document(
+            doc_id="cherry-003", claim_id="TEST_CLAIM_002",
+            text="Compared to 2019, unemployment fell to 4.1%.",
+            doc_type="ground_truth",
+        )
+        result = CherryPickingAttack().apply(doc, seed=SEED)
+        assert result.text == "unemployment fell to 4.1%."
+        assert not result.text.startswith(",")
+        assert not result.text.startswith(" ,")
+
+    def test_clause_stops_at_exclamation_mark(self) -> None:
+        """
+        Regression test: the clause tail must stop at "!"/"?" exactly like
+        it stops at ".", not bleed into the following sentence.
+        """
+        doc = Document(
+            doc_id="cherry-004", claim_id="TEST_CLAIM_002",
+            text="Unemployment fell, compared to 6.8% in 2020! Great news for workers.",
+            doc_type="ground_truth",
+        )
+        result = CherryPickingAttack().apply(doc, seed=SEED)
+        assert result.text == "Unemployment fell! Great news for workers."
+
+    def test_multiple_baseline_clauses_respects_omit_count(self) -> None:
+        """
+        With two eligible clauses and the default omit_count=1, exactly one
+        must be removed and the other must survive untouched.
+        """
+        doc = Document(
+            doc_id="cherry-005", claim_id="TEST_CLAIM_002",
+            text=(
+                "Unemployment fell to 4.1%, compared to 6.8% in 2020. "
+                "Inflation rose to 3.5%, relative to 2.0% last year."
+            ),
+            doc_type="ground_truth",
+        )
+        result = CherryPickingAttack().apply(doc, seed=SEED)
+        assert result.attack_params["omitted_count"] == 1
+        remaining_has_compared = "compared to 6.8%" in result.text
+        remaining_has_relative = "relative to 2.0%" in result.text
+        # Exactly one of the two clauses must have been removed.
+        assert remaining_has_compared != remaining_has_relative
+
+    def test_omit_count_two_removes_both_clauses(self) -> None:
+        doc = Document(
+            doc_id="cherry-006", claim_id="TEST_CLAIM_002",
+            text=(
+                "Unemployment fell to 4.1%, compared to 6.8% in 2020. "
+                "Inflation rose to 3.5%, relative to 2.0% last year."
+            ),
+            doc_type="ground_truth",
+        )
+        result = CherryPickingAttack().apply(doc, seed=SEED, omit_count=2)
+        assert result.attack_params["omitted_count"] == 2
+        assert "compared to 6.8%" not in result.text
+        assert "relative to 2.0%" not in result.text
+
     def test_sensitivity_classification_propagates_to_poisoned_doc(self, baseline_doc: Document) -> None:
         baseline_doc.sensitivity_class = "S1"
         baseline_doc.risk_level = 3

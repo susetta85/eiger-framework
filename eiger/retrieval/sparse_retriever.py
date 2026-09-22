@@ -58,9 +58,9 @@ Design decisions
 
 What this module does NOT do:
   - It does not implement hybrid retrieval (RRF fusion of dense + sparse
-    rankings) — see eiger/retrieval/README.md's "RRF Fusion (planned)"
-    section; a future HybridRetriever would compose a DenseRetriever and a
-    SparseRetriever rather than extending either.
+    rankings) itself — see eiger/retrieval/hybrid_retriever.py, which
+    composes this class and DenseRetriever rather than extending either
+    (Sprint 5).
   - It does not persist its index; fit() must be called again for every
     new corpus (this mirrors ExperimentRunner rebuilding the corpus fresh
     on every run() call).

@@ -44,8 +44,12 @@ from eiger.utils.seeding import make_rng, derive_seed
 # Matches a comparative/baseline clause: a connector phrase (compared to,
 # relative to, versus, since <year>, over the past/last <period>,
 # year-over-year) followed by the rest of the clause up to the next comma or
-# terminal punctuation. Any leading comma/whitespace is consumed too, so
-# removing the match does not leave a dangling ", ." behind.
+# terminal punctuation. Any leading AND trailing comma/whitespace is
+# consumed too (see the ",?" bookending the pattern below), so removing the
+# match does not leave a dangling ", ." or a stray orphaned "," behind —
+# whether the clause sits mid-sentence (bounded by commas on both sides) or
+# opens the sentence (no leading comma, but a trailing one separating it
+# from the rest of the sentence).
 #
 # The clause "tail" (everything after the connector phrase) is built from
 # _CLAUSE_TAIL rather than a plain `[^,.;]*`, to avoid the exact decimal-point
@@ -54,14 +58,16 @@ from eiger.utils.seeding import make_rng, derive_seed
 # "." between "6" and "8", truncating the match mid-number and leaving a
 # corrupted fragment (e.g. ".8% in 2020.") behind in the poisoned text. Each
 # iteration of _CLAUSE_TAIL first tries to consume a whole "<digits>.<digits>"
-# token atomically, and only falls back to matching a single non-terminator
-# character when that fails.
+# token atomically, and only falls back to matching a single non-terminator,
+# non-comma character when that fails. "!" and "?" are excluded alongside
+# "." so a clause followed by either (e.g. "...compared to 6.8% in 2020!
+# Great news.") stops there rather than bleeding into the next sentence.
 #
 # Design decision: this is a single alternation pattern (not a dict like
 # AttributionSwitchAttack's entity map) because, unlike a source substitution,
 # there is no natural "replacement" value for a baseline clause — the whole
 # point is that it disappears without a trace.
-_CLAUSE_TAIL: str = r"(?:\d+\.\d+|[^,.;])*"
+_CLAUSE_TAIL: str = r"(?:\d+\.\d+|[^,.;!?])*"
 
 _BASELINE_CLAUSE_RE: re.Pattern[str] = re.compile(
     r",?\s*(?:"
@@ -71,7 +77,7 @@ _BASELINE_CLAUSE_RE: re.Pattern[str] = re.compile(
     r"since \d{4}|"
     r"over the (?:past|last) [\w\s]+?|"
     r"year[- ]over[- ]year"
-    r")" + _CLAUSE_TAIL,
+    r")" + _CLAUSE_TAIL + r",?",
     re.IGNORECASE,
 )
 

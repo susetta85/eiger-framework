@@ -151,7 +151,7 @@ class TestBuildDataset:
 class TestBuildRunner:
     def test_unsupported_retriever_type_raises(self) -> None:
         config = _minimal_config()
-        config.retriever.type = "hybrid"
+        config.retriever.type = "unknown_retriever_type"
         with pytest.raises(ConfigurationError, match="retriever.type"):
             cli._build_runner(config)
 
@@ -211,6 +211,28 @@ class TestBuildRunner:
         """
         config = _minimal_config()
         config.retriever.type = "sparse"
+
+        with (
+            patch("eiger.__main__.SentenceTransformerEmbedder"),
+            patch("eiger.__main__.QdrantVectorStore"),
+            patch("eiger.__main__.OllamaLLM"),
+            patch("eiger.__main__.EmbeddingFaithfulnessScorer"),
+            patch("eiger.__main__.ExperimentRunner") as mock_runner_cls,
+        ):
+            runner = cli._build_runner(config)
+            assert runner is mock_runner_cls.return_value
+
+    def test_hybrid_retriever_type_is_supported(self) -> None:
+        """
+        retriever.type="hybrid" (Sprint 5 — HybridRetriever) must build a
+        runner exactly like "dense"/"sparse" do at the CLI layer: the
+        embedder/vector_store/llm construction here is retriever-type-
+        agnostic, since ExperimentRunner itself is what chooses between
+        DenseRetriever, SparseRetriever, and HybridRetriever (see its own
+        __init__ and test_runner.py).
+        """
+        config = _minimal_config()
+        config.retriever.type = "hybrid"
 
         with (
             patch("eiger.__main__.SentenceTransformerEmbedder"),

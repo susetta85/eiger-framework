@@ -44,8 +44,13 @@ hits = store.search("eiger_corpus", query_vector, top_k=5)
   create), used by `IngestionPipeline` at the start of every experiment run
   to guarantee a clean corpus.
 - **Payload storage**: each point's payload stores `doc_id`, `claim_id`,
-  `text`, and `doc_type` — enough for `DenseRetriever` to reconstruct a
-  `Document` from a search hit without a separate database lookup.
+  `text`, `doc_type`, `sensitivity_class`, and `risk_level`, plus — for a
+  `PoisonedDocument` — full attack provenance (`attack_name`, `attack_params`,
+  `original_text`, `annotation`). This is enough for `DenseRetriever` to
+  reconstruct the correct `Document`/`PoisonedDocument` subtype from a search
+  hit without a separate database lookup (see `_document_to_payload()`'s own
+  docstring for the Sprint 4 bug this fixed — omitting provenance fields here
+  used to make `ERSMetric` silently always score 0.0).
 
 ---
 
@@ -112,9 +117,10 @@ so the collection is always sized correctly for whichever embedder is
 injected — no manual dimension bookkeeping needed.
 
 **Payload storage.** Documents are stored as a Qdrant payload alongside their
-vectors (`doc_id`, `claim_id`, `text`, `doc_type` — not the full serialized
-`Document` model), so retrieval results can be reconstructed without a
-separate database lookup.
+vectors (`doc_id`, `claim_id`, `text`, `doc_type`, `sensitivity_class`,
+`risk_level`, and — for poisoned documents — full attack provenance; not the
+full serialized `Document` model), so retrieval results can be reconstructed
+without a separate database lookup.
 
 ---
 

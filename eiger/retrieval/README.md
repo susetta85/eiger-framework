@@ -1,12 +1,13 @@
 # eiger.retrieval
 
-**Status: `SentenceTransformerEmbedder`, `DenseRetriever` (Sprint 2, Steps 1 & 3), and `SparseRetriever` (Sprint 4) implemented. `HybridRetriever` remains future work.**
+**Status: `SentenceTransformerEmbedder`, `DenseRetriever` (Sprint 2, Steps 1 & 3), `SparseRetriever` (Sprint 4), and `HybridRetriever` (Sprint 5) all implemented.**
 
 This module provides the embedder and retrieval strategies used in the EIGER
-evaluation pipeline. `DenseRetriever`/`SparseRetriever` both consume a query
-string and return a ranked list of documents — one from the vector corpus,
-one from an in-memory BM25 index; `SentenceTransformerEmbedder` turns text
-into the dense vectors that both retrieval (dense only) and ingestion rely on.
+evaluation pipeline. `DenseRetriever`/`SparseRetriever`/`HybridRetriever` all
+consume a query string and return a ranked list of documents — one from the
+vector corpus, one from an in-memory BM25 index, and one that fuses both via
+RRF; `SentenceTransformerEmbedder` turns text into the dense vectors that
+retrieval (dense and hybrid) and ingestion rely on.
 
 ---
 
@@ -17,10 +18,13 @@ into the dense vectors that both retrieval (dense only) and ingestion rely on.
 | Embedder | `SentenceTransformerEmbedder` | Dense embedding | sentence-transformers | ✅ Implemented |
 | Dense retriever | `DenseRetriever` | Cosine similarity via Qdrant | `BaseEmbedder` + `BaseVectorStore` | ✅ Implemented |
 | Sparse retriever | `SparseRetriever` | BM25 (Okapi) | rank-bm25 | ✅ Implemented (Sprint 4) |
-| Hybrid retriever | `HybridRetriever` | RRF fusion (dense + sparse) | rank-bm25 + Qdrant | 🔲 Planned |
+| Hybrid retriever | `HybridRetriever` | RRF fusion (dense + sparse) | rank-bm25 + Qdrant | ✅ Implemented (Sprint 5) |
 
 `DenseRetriever` and `SparseRetriever` both extend `BaseRetriever` from
-`eiger.core.interfaces`. `DenseRetriever` is a thin orchestration layer — it
+`eiger.core.interfaces`; `HybridRetriever` also extends `BaseRetriever` but
+composes one `DenseRetriever` and one `SparseRetriever` internally rather
+than implementing its own ranking logic (see its own section below).
+`DenseRetriever` is a thin orchestration layer — it
 holds no corpus state itself and delegates entirely to the injected
 `BaseEmbedder` and `BaseVectorStore`. `SparseRetriever` is different: it
 *does* hold corpus state (see its own section below), because BM25 needs the
@@ -185,7 +189,7 @@ Retrievers are configured via `RetrieverConfig` from `eiger.core.models`:
 
 ```python
 class RetrieverConfig(BaseModel):
-    type: str = "dense"           # "dense" | "sparse" | "hybrid" ("hybrid" not yet implemented)
+    type: str = "dense"           # "dense" | "sparse" | "hybrid"
     embedder: str                 # HuggingFace model ID — provenance only, see note below
     vector_store: str = "qdrant"  # provenance only, see note below
     top_k: int = 5
@@ -202,7 +206,7 @@ which should match what `RetrieverConfig` declares.
 
 ---
 
-## RRF Fusion (planned — `HybridRetriever`)
+## RRF Fusion — `HybridRetriever` (Sprint 5)
 
 Reciprocal Rank Fusion combines dense and sparse rankings without requiring
 score normalization. Given rank `r` from each retriever, the fused score is:
@@ -211,23 +215,49 @@ score normalization. Given rank `r` from each retriever, the fused score is:
 RRF(d) = sum(1 / (k + r_i(d)))   for each retriever i
 ```
 
-The default constant `k = 60` follows the original RRF paper. Not yet
-implemented — now that both `DenseRetriever` and `SparseRetriever` exist,
-`HybridRetriever` can compose them directly (run both, fuse rankings by RRF)
-rather than needing either underlying retriever to change.
+The default constant `k = 60` follows the original RRF paper (configurable
+via `HybridRetriever(dense=..., sparse=..., rrf_k=...)`). `HybridRetriever`
+composes a `DenseRetriever` and a `SparseRetriever` directly — neither
+underlying retriever needed any change — calling both retrievers' full
+`retrieve(query, claim_id, top_k)` and fusing their hit lists by document
+`doc_id`. A document need not appear in both rankings: it simply accumulates
+one RRF term per ranking it does appear in. The fused score has no fixed
+range (like BM25's own raw score), so the final hits are re-normalized into
+`[0, 1]` via the same per-query max-normalization technique as
+`SparseRetriever._normalize_score()`.
+
+```python
+from eiger.retrieval import DenseRetriever, SparseRetriever, HybridRetriever
+
+hybrid = HybridRetriever(
+    dense=DenseRetriever(embedder=embedder, vector_store=store, collection="eiger_corpus"),
+    sparse=SparseRetriever(),
+)
+hybrid.fit(corpus.all_documents)  # populates the sparse (BM25) side only —
+                                  # the dense side must already have been
+                                  # ingested into the shared vector store
+result = hybrid.retrieve(query="What happened to inflation?", claim_id="C1", top_k=5)
+```
+
+`ExperimentRunner` wires this up automatically for `retriever.type: hybrid`
+— see `eiger/experiments/runner.py`'s module docstring — ingesting the
+corpus into the vector store (dense side) *and* calling `fit()` (sparse
+side) before any claim is evaluated.
 
 ---
 
 ## Test coverage
 
 `tests/unit/test_embedder.py` (13 tests), `tests/unit/test_retriever.py`
-(32 tests), and `tests/unit/test_sparse_retriever.py` (30 tests) cover all
-three classes with 100% line coverage, using mocked `sentence-transformers` /
-`BaseVectorStore` (dense) or a small hand-built in-memory corpus (sparse) —
-no real model download or Qdrant server required for either.
+(32 tests), `tests/unit/test_sparse_retriever.py` (30 tests), and
+`tests/unit/test_hybrid_retriever.py` cover all four classes with 100% line
+coverage, using mocked `sentence-transformers` / `BaseVectorStore` (dense),
+a small hand-built in-memory corpus (sparse), or mocked `DenseRetriever`/
+`SparseRetriever` instances (hybrid) — no real model download or Qdrant
+server required for any of them.
 
 ## Remaining work
 
 - [x] `SparseRetriever` — BM25 index via `rank-bm25` (Sprint 4)
-- [ ] `HybridRetriever` — RRF fusion of dense and sparse rankings
+- [x] `HybridRetriever` — RRF fusion of dense and sparse rankings (Sprint 5)
 - [ ] Integration tests: round-trip against a live Qdrant instance + real embedder

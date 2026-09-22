@@ -54,7 +54,7 @@ from eiger.core.models import (
     RetrieverConfig,
 )
 from eiger.experiments.runner import ExperimentRunner
-from eiger.retrieval import SparseRetriever
+from eiger.retrieval import DenseRetriever, HybridRetriever, SparseRetriever
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -205,6 +205,21 @@ class TestExperimentRunnerInit:
         assert isinstance(runner.retriever, SparseRetriever)
         assert runner.retriever_type == "sparse"
 
+    def test_hybrid_retriever_type_builds_hybrid_retriever(self, tmp_path: Path) -> None:
+        runner, mock_embedder, mock_vector_store, _ = _make_runner(
+            tmp_path, retriever_type="hybrid"
+        )
+        assert isinstance(runner.retriever, HybridRetriever)
+        assert runner.retriever_type == "hybrid"
+        # HybridRetriever composes a real DenseRetriever (sharing the same
+        # embedder/vector_store/collection as a pure "dense" run) and a
+        # real SparseRetriever, per its __init__.
+        assert isinstance(runner.retriever.dense, DenseRetriever)
+        assert isinstance(runner.retriever.sparse, SparseRetriever)
+        assert runner.retriever.dense.embedder is mock_embedder
+        assert runner.retriever.dense.vector_store is mock_vector_store
+        assert runner.retriever.dense.collection == runner.collection
+
 
 # ─── run() — corpus / attack resolution ───────────────────────────────────────
 
@@ -303,6 +318,60 @@ class TestRunSparseRetriever:
 
     def test_sparse_run_with_no_claims_produces_empty_result(self, tmp_path: Path) -> None:
         runner, _, _, mock_llm = _make_runner(tmp_path, retriever_type="sparse")
+        result = runner.run([], save=False)
+        assert result.records == []
+        mock_llm.build_rag_prompt.assert_not_called()
+
+
+# ─── run() — hybrid retriever path ─────────────────────────────────────────────
+
+class TestRunHybridRetriever:
+    """Tests for run() when config.retriever.type == 'hybrid' (Sprint 5)."""
+
+    def test_hybrid_run_ingests_vector_store_and_fits_sparse_index(self, tmp_path: Path) -> None:
+        """
+        A hybrid run must populate BOTH indexes: the vector store (dense
+        side, like a pure "dense" run) and the in-memory BM25 index (sparse
+        side, like a pure "sparse" run) — unlike a sparse-only run, which
+        skips the vector store entirely (see TestRunSparseRetriever above).
+        """
+        runner, _, mock_vector_store, _ = _make_runner(tmp_path, retriever_type="hybrid")
+        runner.run([_make_claim()], save=False)
+        mock_vector_store.reset_collection.assert_called_once()
+        mock_vector_store.upsert.assert_called_once()
+
+    def test_hybrid_run_ranks_by_lexical_overlap_when_dense_returns_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        """
+        End-to-end proof that HybridRetriever's sparse side is actually
+        wired in: with the mocked vector store returning zero dense hits
+        (the default when `search_results` is not overridden), the fused
+        ranking must still surface the lexically-relevant document via BM25
+        — mirroring TestRunSparseRetriever.test_sparse_run_ranks_by_lexical_overlap.
+        """
+        runner, _, _, mock_llm = _make_runner(tmp_path, retriever_type="hybrid", top_k=1)
+        claim_a = Claim(
+            claim_id="A",
+            original_fact="The central bank raised interest rates to control inflation.",
+            context_query="What happened to inflation?",
+            source_dataset="test_fixture",
+        )
+        claim_b = Claim(
+            claim_id="B",
+            original_fact="The football team won the championship match yesterday.",
+            context_query="What happened to inflation?",
+            source_dataset="test_fixture",
+        )
+        runner.run([claim_a, claim_b], save=False)
+        for call in mock_llm.build_rag_prompt.call_args_list:
+            _, context_docs = call.args
+            assert context_docs == [
+                "The central bank raised interest rates to control inflation."
+            ]
+
+    def test_hybrid_run_with_no_claims_produces_empty_result(self, tmp_path: Path) -> None:
+        runner, _, _, mock_llm = _make_runner(tmp_path, retriever_type="hybrid")
         result = runner.run([], save=False)
         assert result.records == []
         mock_llm.build_rag_prompt.assert_not_called()

@@ -147,13 +147,24 @@ def _read_raw_rows(path: Path) -> list[dict[str, Any]]:
 # normalised_rating being True for every one of them. This is deliberately
 # an allowlist, not a denylist: original_verdict is free-text from the raw
 # export, so a denylist could never enumerate every non-true value in
-# advance, whereas the two values below are the only ones actually
-# confirmed (by manual inspection) to mean "true" in this export. Being
-# conservative here (excluding anything not explicitly allowed) is the
-# safe direction for ground-truth data feeding a research paper's metrics.
+# advance, whereas the values below are the only ones actually confirmed
+# (by manual inspection) to mean "true" in this export. Being conservative
+# here (excluding anything not explicitly allowed) is the safe direction
+# for ground-truth data feeding a research paper's metrics.
+#
+# "legit" added after running scripts/clean_snopes_contamination.py
+# --dry-run against the live file: manual inspection of 3 sample rows
+# (SNOPES_82071/82703/82771 — genuine offers/class-action notices) showed
+# Snopes uses "Legit" as its own "true" rating for this claim category, so
+# excluding it was a false positive (removing verified-true claims, not
+# contamination). By contrast, a separate "no" original_verdict value seen
+# in the same dry-run (12 rows) is not a real Snopes rating and directly
+# contradicts normalised_rating=True on those rows — this looks like a raw
+# data-quality issue in the upstream Snopes export itself, not a bug in this
+# filter, so "no" is deliberately NOT added here; those rows stay excluded.
 # To clean an already-generated output file against this same check, see
 # scripts/clean_snopes_contamination.py.
-_VERIFIED_TRUE_ORIGINAL_VERDICTS = frozenset({"true", "correct attribution"})
+_VERIFIED_TRUE_ORIGINAL_VERDICTS = frozenset({"true", "correct attribution", "legit"})
 
 
 def _is_verdict_consistent_with_true(original_verdict: Any) -> bool:

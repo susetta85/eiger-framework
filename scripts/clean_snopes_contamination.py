@@ -89,7 +89,15 @@ _DEFAULT_PATH = Path("data/snopes/snopes_enriched.json")
 # exactly — kept as a separate literal here (rather than importing that
 # module) so this script has zero dependency on the rest of the package and
 # can run standalone against a JSON file with nothing else installed.
-_VERIFIED_TRUE_ORIGINAL_VERDICTS = frozenset({"true", "correct attribution"})
+#
+# "legit" was added after a --dry-run against the live file surfaced 9 rows
+# with original_verdict=Legit whose original_fact text (manually inspected)
+# was genuinely true — Snopes uses "Legit" as its own "true" rating for
+# offer/scam-check claims. A separate "no" verdict (12 rows) was also found
+# but is NOT added here: it isn't a real Snopes rating and looks like a raw
+# data-quality issue in the upstream export, not a false positive of this
+# filter, so those rows stay excluded.
+_VERIFIED_TRUE_ORIGINAL_VERDICTS = frozenset({"true", "correct attribution", "legit"})
 
 _NOTES_VERDICT_RE = re.compile(r"original_verdict=(.*?);\s*date_published=")
 

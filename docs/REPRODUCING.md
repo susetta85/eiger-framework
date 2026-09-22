@@ -188,11 +188,11 @@ If instead you're using the Dockerized Ollama alternative
 make test-unit
 ```
 
-This runs `pytest tests/unit/` against the 434 unit tests. All tests must pass before
+This runs `pytest tests/unit/` against the 485 unit tests. All tests must pass before
 running any experiments. Expected final output:
 
 ```
-434 passed in X.XXs
+485 passed in X.XXs
 ```
 
 ### Run the Quickstart Pipeline

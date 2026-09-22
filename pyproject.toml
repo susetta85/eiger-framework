@@ -35,6 +35,11 @@ dependencies = [
     # CLI experiment config parsing (was only a transitive dependency
     # until Sprint 3's eiger/__main__.py started importing it directly)
     "PyYAML>=6.0,<7.0",
+    # BM25 sparse retrieval (eiger/retrieval/sparse_retriever.py, Sprint 4).
+    # Moved here from the "future" extra below now that SparseRetriever
+    # actually imports it (lazily, inside fit() — see that module's
+    # docstring for why the import itself stays deferred).
+    "rank-bm25>=0.2.2",
 ]
 
 [project.optional-dependencies]
@@ -55,14 +60,11 @@ data-import = [
     "openpyxl>=3.1.0,<4.0",
 ]
 # For features that are planned but not yet implemented: a real RAGAS-based
-# faithfulness_scorer (see eiger/metrics/README.md) and sparse/hybrid
-# retrieval (see eiger/retrieval/README.md). Neither eiger/ nor scripts/
-# actually imports these today — they were previously listed as core
-# dependencies despite being unused, unnecessarily bloating every
-# `pip install eiger`. Install this extra only once that work starts.
+# faithfulness_scorer (see eiger/metrics/README.md). HybridRetriever (RRF
+# fusion of dense + sparse) will need no new dependency beyond what
+# SparseRetriever/DenseRetriever already require, so it is not listed here.
 future = [
     "ragas>=0.1.0",
-    "rank-bm25>=0.2.2",
 ]
 
 [project.scripts]

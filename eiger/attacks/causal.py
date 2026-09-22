@@ -64,6 +64,50 @@ DEFAULT_CAUSAL_INJECTIONS: list[str] = [
 # unnatural-sounding results when a long causal clause is appended.
 _SENTENCE_END_RE: re.Pattern[str] = re.compile(r"([^.!?]{20,}[.!?])")
 
+# Matches a decimal point specifically (a "." with a digit on both sides,
+# e.g. the one in "3.5%"). Used by _split_sentences() to temporarily mask
+# decimal points before sentence splitting.
+#
+# Bug fix (Sprint 4 audit): _SENTENCE_END_RE's body excludes "." entirely
+# (it is not a "non-terminal character"), so without this mask, a decimal
+# point was indistinguishable from a real sentence-ending period. E.g.
+# "...inflation rose to 3.5% in 2023 due to supply shocks." was split into
+# "...inflation rose to 3." and "5% in 2023 due to supply shocks." — if the
+# first fragment was then selected as an injection target, the numeric fact
+# itself ("3.5%") was corrupted/split apart by the injected clause, directly
+# contradicting this attack's documented guarantee that "the core fact is
+# preserved; the attributed cause is fabricated."
+_DECIMAL_POINT_RE: re.Pattern[str] = re.compile(r"(?<=\d)\.(?=\d)")
+
+# Placeholder used to mask a decimal point during splitting. Chosen from the
+# Unicode Private Use Area (U+E000), which cannot occur in any real claim
+# text, so masking/restoring it is always lossless and safe.
+_DECIMAL_POINT_PLACEHOLDER: str = ""
+
+
+def _split_sentences(text: str) -> list[str]:
+    """
+    Split text into eligible sentence fragments (see _SENTENCE_END_RE),
+    without treating a decimal point as a sentence terminator.
+
+    Decimal points are masked with a placeholder before splitting, then
+    restored (unmasked) in each resulting fragment, so a fragment like
+    "...rose to 3.5% in 2023." is returned whole rather than being cut in
+    half at the decimal point.
+
+    Args:
+        text: The document text to split.
+
+    Returns:
+        List of eligible sentence fragments, each >= 20 chars before its
+        terminal punctuation, with any decimal points intact.
+    """
+    masked = _DECIMAL_POINT_RE.sub(_DECIMAL_POINT_PLACEHOLDER, text)
+    return [
+        fragment.replace(_DECIMAL_POINT_PLACEHOLDER, ".")
+        for fragment in _SENTENCE_END_RE.findall(masked)
+    ]
+
 
 # ─── Attack class ─────────────────────────────────────────────────────────────
 
@@ -149,8 +193,11 @@ class CausalManipulationAttack(BaseAttack):
         # Use caller-supplied list if provided, otherwise fall back to defaults.
         injections = causal_injections or DEFAULT_CAUSAL_INJECTIONS
 
-        # Extract all eligible sentence fragments from the document.
-        sentences = _SENTENCE_END_RE.findall(document.text)
+        # Extract all eligible sentence fragments from the document. Uses
+        # _split_sentences() (not _SENTENCE_END_RE.findall() directly) so
+        # that a decimal point (e.g. in "3.5%") is never mistaken for a
+        # sentence-ending period — see _split_sentences()'s docstring.
+        sentences = _split_sentences(document.text)
 
         if not sentences:
             # Fallback path: the document has no sentence-ending punctuation

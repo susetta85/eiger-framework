@@ -35,8 +35,13 @@ Design decisions
   value due to floating point error.
 - **Document reconstruction from payload**: the vector store returns
   raw dicts (not Document objects) so that DenseRetriever controls how
-  a Document is rebuilt from the stored payload. This keeps
-  BaseVectorStore implementations backend-agnostic (see qdrant_store.py).
+  a Document (or PoisonedDocument, when the payload carries poisoning
+  provenance — see _document_from_payload()) is rebuilt from the stored
+  payload. This keeps BaseVectorStore implementations backend-agnostic
+  (see qdrant_store.py). Getting this reconstruction wrong for poisoned
+  documents previously made eiger.metrics.ers.ERSMetric silently always
+  return 0.0 under dense retrieval (fixed in the Sprint 4 audit — see
+  _document_from_payload()'s own docstring).
 - **Fail loud**: any failure while encoding the query or querying the
   vector store is wrapped in RetrievalError so callers only need to
   catch one exception type at the retrieval boundary.
@@ -56,7 +61,13 @@ from typing import Any
 
 from eiger.core.exceptions import RetrievalError
 from eiger.core.interfaces import BaseEmbedder, BaseRetriever, BaseVectorStore
-from eiger.core.models import Document, RetrievalResult, RetrievedDocument
+from eiger.core.models import (
+    Document,
+    PoisonAnnotation,
+    PoisonedDocument,
+    RetrievalResult,
+    RetrievedDocument,
+)
 from eiger.utils.logging import get_logger
 
 log = get_logger(__name__)
@@ -218,8 +229,7 @@ class DenseRetriever(BaseRetriever):
         Rebuild a RetrievedDocument from a raw vector store hit.
 
         The Document is reconstructed from the hit's payload rather than
-        fetched from a separate store, since QdrantVectorStore.upsert()
-        stores doc_id, claim_id, text, and doc_type directly in the payload.
+        fetched from a separate store — see _document_from_payload().
 
         Args:
             raw_hit: One hit dict from BaseVectorStore.search(), containing
@@ -227,20 +237,59 @@ class DenseRetriever(BaseRetriever):
             rank:    1-based rank position of this hit within the result list.
 
         Returns:
-            RetrievedDocument with the rebuilt Document, normalized score,
-            and rank.
+            RetrievedDocument with the rebuilt Document (or PoisonedDocument),
+            normalized score, and rank.
         """
-        payload = raw_hit["payload"]
-        document = Document(
-            doc_id=payload["doc_id"],
-            claim_id=payload["claim_id"],
-            text=payload["text"],
-            doc_type=payload["doc_type"],
-        )
+        document = DenseRetriever._document_from_payload(raw_hit["payload"])
         return RetrievedDocument(
             document=document,
             score=DenseRetriever._normalize_score(raw_hit["score"]),
             rank=rank,
+        )
+
+    @staticmethod
+    def _document_from_payload(payload: dict[str, Any]) -> Document:
+        """
+        Reconstruct a Document (or PoisonedDocument) from a Qdrant payload.
+
+        Bug fix (Sprint 4 audit): this used to always build a plain
+        Document, discarding attack_name/attack_params/original_text/
+        annotation even when doc_type == "poisoned" and the payload (written
+        by QdrantVectorStore._document_to_payload, which this is the exact
+        inverse of) actually carried that provenance. That silently broke
+        any downstream code relying on isinstance(doc, PoisonedDocument) or
+        doc.annotation — most notably eiger.metrics.ers.ERSMetric, which
+        always saw a plain Document and therefore always scored 0.0.
+
+        The ``"attack_name" in payload`` guard (rather than trusting
+        doc_type alone) is a deliberate defensive fallback: a payload
+        written by an older version of this code (before this fix) has
+        doc_type == "poisoned" but none of the provenance fields, and must
+        still degrade to a plain Document rather than raising a KeyError.
+
+        Args:
+            payload: The payload dict from a BaseVectorStore.search() hit.
+
+        Returns:
+            A PoisonedDocument if the payload carries poisoning provenance,
+            otherwise a plain Document.
+        """
+        if payload.get("doc_type") == "poisoned" and "attack_name" in payload:
+            annotation_data = payload.get("annotation")
+            return PoisonedDocument(
+                doc_id=payload["doc_id"],
+                claim_id=payload["claim_id"],
+                text=payload["text"],
+                attack_name=payload["attack_name"],
+                attack_params=payload.get("attack_params", {}),
+                original_text=payload.get("original_text", payload["text"]),
+                annotation=PoisonAnnotation(**annotation_data) if annotation_data else None,
+            )
+        return Document(
+            doc_id=payload["doc_id"],
+            claim_id=payload["claim_id"],
+            text=payload["text"],
+            doc_type=payload["doc_type"],
         )
 
     @staticmethod

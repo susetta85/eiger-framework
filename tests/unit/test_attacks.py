@@ -34,6 +34,7 @@ from eiger.attacks import (
     get_attack,
     list_attacks,
 )
+from eiger.attacks.causal import _split_sentences
 from eiger.core.models import Document, PoisonedDocument
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -305,6 +306,58 @@ class TestCausalManipulationAttack:
         )
         result = CausalManipulationAttack().apply(short_doc, seed=SEED)
         assert len(result.text) > len(short_doc.text)
+
+    def test_decimal_fact_not_split_or_corrupted(self, base_doc: Document) -> None:
+        """
+        Regression test (Sprint 4 audit): the numeric fact "3.5%" in
+        base_doc.text must survive intact as a contiguous substring.
+
+        Before the fix, _SENTENCE_END_RE could not distinguish the decimal
+        point in "3.5%" from a sentence-ending period, so base_doc.text was
+        split into "...rose to 3." and "5% in 2023...due to supply shocks."
+        If the first fragment was sampled as an injection target (a real,
+        seed-dependent possibility), the numeric fact was corrupted — e.g.
+        "...rose to 3 due to <fabricated clause>.5% in 2023...". This test
+        runs across many seeds specifically to catch that possibility,
+        rather than relying on SEED=42 happening to avoid it.
+        """
+        attack = CausalManipulationAttack()
+        for seed in range(30):
+            result = attack.apply(base_doc, seed=seed)
+            assert "3.5%" in result.text, (
+                f"seed={seed}: numeric fact '3.5%' was corrupted or split: {result.text!r}"
+            )
+
+
+# ─── _split_sentences (decimal-point-aware sentence splitting) ────────────────
+
+class TestSplitSentences:
+    """
+    Direct tests for _split_sentences(), the helper introduced by the
+    Sprint 4 audit fix to stop decimal points from being mistaken for
+    sentence-ending punctuation.
+    """
+
+    def test_decimal_point_is_not_a_sentence_boundary(self) -> None:
+        text = "The WHO reported that inflation rose to 3.5% in 2023 due to supply shocks."
+        assert _split_sentences(text) == [text]
+
+    def test_real_sentence_boundaries_still_split(self) -> None:
+        text = (
+            "Inflation rose sharply during the reporting period. "
+            "Unemployment also increased significantly this year."
+        )
+        assert len(_split_sentences(text)) == 2
+
+    def test_multiple_decimals_all_preserved_in_one_fragment(self) -> None:
+        text = "The value moved from 1.25 to 3.75 over the course of the year 2023 report."
+        sentences = _split_sentences(text)
+        assert len(sentences) == 1
+        assert "1.25" in sentences[0]
+        assert "3.75" in sentences[0]
+
+    def test_no_eligible_sentences_returns_empty_list(self) -> None:
+        assert _split_sentences("Short.") == []
 
 
 # ─── Registry ─────────────────────────────────────────────────────────────────

@@ -4,8 +4,8 @@
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-436%20passing-brightgreen.svg)](tests/)
-[![Sprint](https://img.shields.io/badge/sprint-3%20in%20progress-blue.svg)](docs/ARCHITECTURE.md)
+[![Tests](https://img.shields.io/badge/tests-487%20passing-brightgreen.svg)](tests/)
+[![Sprint](https://img.shields.io/badge/sprint-4%20planned-blue.svg)](docs/CLAIM_AND_RESEARCH_QUESTIONS.md)
 
 ---
 
@@ -26,9 +26,13 @@ This failure mode is invisible to standard faithfulness metrics (RAGAS, TruLens,
 
 ---
 
-## Research Hypothesis
+## Project Claim & Research Questions
 
-> *"Faithfulness and Source Integrity are independent evaluation dimensions. As corpus poisoning increases, faithfulness remains high while Source Integrity decreases — leading to a measurable increase in Faithful Falsehoods."*
+**Claim:** RAG relocates hallucination risk from the model to the corpus. A small share of poisoned documents, if stylistically credible, can be retrieved and cited in an answer that is *faithful to its context* and *false relative to the world* — and because a cited source reads as an epistemic warrant to a human reviewer, this is as much an editorial vulnerability as a technical one.
+
+> *Working hypothesis (H2): Faithfulness and Source Integrity are independent evaluation dimensions. As corpus poisoning increases, faithfulness remains high while Source Integrity decreases — leading to a measurable increase in Faithful Falsehoods.*
+
+The full claim, five research questions (RQ1–RQ5) with companion hypotheses, the threat model, the manipulation taxonomy, and an honest gap analysis against the multidisciplinary research proposal live in [`docs/CLAIM_AND_RESEARCH_QUESTIONS.md`](docs/CLAIM_AND_RESEARCH_QUESTIONS.md) — start there if you're new to the project or picking up a task from the roadmap.
 
 ---
 
@@ -87,7 +91,7 @@ EIBench is a six-layer pipeline. Each layer is independently extensible via a pl
 |-------|-----------|--------|
 | 1 | Corpus Builder + Ingestion Pipeline (embed + upsert) | ✅ Sprint 1 + 2 |
 | 2 | Poisoning Engine (4 attack types) | ✅ Sprint 1 |
-| 3 | Dense retrieval (Qdrant + sentence-transformers) | ✅ Sprint 2 |
+| 3 | Dense retrieval (Qdrant + sentence-transformers); Sparse (BM25) retrieval | ✅ Sprint 2 + Sprint 4 |
 | 4 | Llama 3.1 / Mistral via Ollama | ✅ Sprint 2 |
 | 5 | FFR, ERS implemented; SI (NLI) falls back to 0.0 without `transformers`/`torch`; FFR's faithfulness signal is a heuristic embedding proxy, not RAGAS yet | ✅ Sprint 1 + 2 |
 | 6 | `ExperimentRunner` orchestration + `results.json` provenance | ✅ Sprint 2 |
@@ -97,20 +101,24 @@ EIBench is a six-layer pipeline. Each layer is independently extensible via a pl
 | 10 | `AVeriTecDataset` (Supported-label subset, evidence-question context_query — no LLM needed) | ✅ Sprint 3 — loader only, `download()` is a guard not a fetcher; not yet independently reviewed, see `docs/DATASETS.md` §3 |
 | 11 | `PolitiFactDataset` (LIAR "true"-label subset, templated context_query — no LLM needed) | ✅ Sprint 3 — loader only, `download()` is a guard not a fetcher; not yet independently reviewed, see `docs/DATASETS.md` §4 |
 | 12 | `FactCheckDataset` (CheckThat! mirror, "true"-verdict subset, templated context_query — no LLM needed) | ✅ Sprint 3 — loader only, `download()` is a guard not a fetcher, raw format assumed JSONL (not independently verified); not yet independently reviewed, see `docs/DATASETS.md` §5 |
-| — | Sparse/hybrid retrieval, OpenAI LLM backend, real RAGAS-based faithfulness scorer, degradation curves / HTML report | 🔄 Future sprints |
+| — | Hybrid (RRF) retrieval, OpenAI LLM backend, real RAGAS-based faithfulness scorer, degradation curves / HTML report | 🔄 Future sprints |
+| 13 | Project claim, RQ1–RQ5/H1–H5, threat model, M01–M06 taxonomy, and Sprint 4/5 gap analysis documented | ✅ Sprint 3→4 — see `docs/CLAIM_AND_RESEARCH_QUESTIONS.md` |
+| 14 | `SparseRetriever` (BM25 via `rank-bm25`), selectable via `retriever.type: sparse` | ✅ Sprint 4 — see `eiger/retrieval/README.md` |
 
 ---
 
 ## Attack Taxonomy
 
-| ID | Name | Description | EIBench Type |
-|----|------|-------------|--------------|
-| `numerical_shift` | Numerical Shift | Swaps adjacent digits: `3.5%` → `35.%` | Type 1 |
-| `date_manipulation` | Date Manipulation | Shifts year references: `2024` → `2019` | Type 2 |
-| `attribution_switch` | Attribution Switch | Replaces sources: `WHO` → `a blog` | Type 3 |
-| `causal_manipulation` | Causal Manipulation | Injects fabricated causal clauses | Type 4 |
+| ID | Name | Description | EIBench Type | Project Code |
+|----|------|-------------|--------------|--------------|
+| `numerical_shift` | Numerical Shift | Swaps adjacent digits: `3.5%` → `35.%` | Type 1 | M01 |
+| `date_manipulation` | Date Manipulation | Shifts year references: `2024` → `2019` | Type 2 | M02 |
+| `attribution_switch` | Attribution Switch | Replaces sources: `WHO` → `a blog` | Type 3 | M03 |
+| `causal_manipulation` | Causal Manipulation | Injects fabricated causal clauses | Type 4 | M04 |
+| — *(not implemented)* | Cherry-picking | Would omit qualifying context/baseline | — | M05 |
+| — *(not implemented)* | Missing Context | Would drop context needed to interpret the claim | — | M06 |
 
-All attacks: deterministic (seed-controlled), isolated (no global state mutation), extensible (plugin registry).
+All implemented attacks: deterministic (seed-controlled), isolated (no global state mutation), extensible (plugin registry). M05/M06 are part of the project's own manipulation taxonomy but have no `eiger/attacks/` implementation yet — see [`docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §5](docs/CLAIM_AND_RESEARCH_QUESTIONS.md#5-manipulation-taxonomy-m01m06).
 
 ---
 
@@ -215,10 +223,11 @@ metrics: [ffr, ers, source_integrity]
 output_dir: results/baseline_v1
 ```
 
-Only `retriever.type: dense`, `retriever.vector_store: qdrant`, and
+Only `retriever.type: dense` or `sparse` (Sprint 4 — BM25, see
+`eiger/retrieval/README.md`), `retriever.vector_store: qdrant`, and
 `llm.backend: ollama` are implemented — the CLI raises a clear
-`ConfigurationError` for any other value (e.g. `sparse`/`hybrid` retrieval
-or an `openai` backend, which the config schema already accepts for
+`ConfigurationError` for any other value (e.g. `hybrid` retrieval or an
+`openai` backend, which the config schema already accepts for
 forward-compatibility but nothing implements yet).
 
 **Via the Python API** (equivalent to the above, useful in notebooks or when
@@ -269,7 +278,7 @@ eiger-framework/
 │   ├── attacks/              # Adversarial poisoning strategies
 │   ├── datasets/             # Dataset loaders (AVeriTeC, PolitiFact, …)
 │   ├── ingestion/            # Corpus builder
-│   ├── retrieval/            # Retrieval strategies (dense implemented; sparse/hybrid planned)
+│   ├── retrieval/            # Retrieval strategies (dense + sparse/BM25 implemented; hybrid planned)
 │   ├── vector_stores/        # Vector store adapters (Qdrant implemented; FAISS/Chroma planned)
 │   ├── llm/                  # LLM backends (Ollama implemented; OpenAI-compatible planned)
 │   ├── metrics/              # Evaluation metrics (FFR, SI, ERS, RAGAS)
@@ -278,7 +287,7 @@ eiger-framework/
 │   └── utils/                # Logging, seeding, hashing
 │
 ├── tests/
-│   ├── unit/                 # Fast, no external services (434 tests, 100% coverage)
+│   ├── unit/                 # Fast, no external services (485 tests, 100% coverage)
 │   └── integration/          # Requires docker compose up
 │
 ├── experiments/              # YAML experiment definitions

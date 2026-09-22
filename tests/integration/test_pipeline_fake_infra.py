@@ -33,6 +33,8 @@ import math
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from eiger.core.interfaces import BaseEmbedder, BaseLLM, BaseVectorStore
 from eiger.core.models import (
     AttackConfig,
@@ -46,6 +48,7 @@ from eiger.core.models import (
 )
 from eiger.experiments import ExperimentRunner
 from eiger.metrics import EmbeddingFaithfulnessScorer
+from eiger.vector_stores.qdrant_store import _document_to_payload
 
 # ─── Fake infrastructure ───────────────────────────────────────────────────────
 
@@ -112,16 +115,16 @@ class FakeInMemoryVectorStore(BaseVectorStore):
         points = self._collections.get(collection, [])
         scored = [(doc, self._cosine(query_vector, vec)) for doc, vec in points]
         scored.sort(key=lambda pair: pair[1], reverse=True)
+        # Reuses the exact same payload shape as QdrantVectorStore (Sprint 4
+        # audit fix): a stripped-down payload here would silently reintroduce,
+        # in this integration test, the bug that made ERSMetric always see
+        # every retrieved document as a plain (unpoisoned) Document — see
+        # qdrant_store.py's/retriever.py's module docstrings.
         return [
             {
                 "doc_id": doc.doc_id,
                 "score": score,
-                "payload": {
-                    "doc_id": doc.doc_id,
-                    "claim_id": doc.claim_id,
-                    "text": doc.text,
-                    "doc_type": doc.doc_type,
-                },
+                "payload": _document_to_payload(doc),
             }
             for doc, score in scored[:top_k]
         ]
@@ -212,6 +215,15 @@ def test_full_pipeline_runs_end_to_end_with_fake_infra(tmp_path: Path) -> None:
     assert set(result.aggregate_metrics.keys()) == {"ffr", "ers"}
     assert 0.0 <= result.aggregate_metrics["ffr"] <= 1.0
     assert 0.0 <= result.aggregate_metrics["ers"] <= 1.0
+    # Regression assertion (Sprint 4 audit): ERS must reflect the real
+    # NumericalShiftAttack annotation (plausibility=4.0, verification=3.5,
+    # editorial=4.5 -> (4.0*0.3 + 3.5*0.4 + 4.5*0.3) / 5.0 == 0.79), not the
+    # silent 0.0 that resulted when the poisoned document's provenance was
+    # dropped on the vector-store round-trip. A bare "0.0 <= ers <= 1.0"
+    # check (as this assertion used to be) passes trivially even when the
+    # metric is completely broken, which is exactly how this bug went
+    # undetected — see qdrant_store.py's/retriever.py's module docstrings.
+    assert result.aggregate_metrics["ers"] == pytest.approx(0.79)
     assert "ffr" in record.metrics
     assert "ers" in record.metrics
     # The faithfulness_scorer hook populated its keys before FFR ran.

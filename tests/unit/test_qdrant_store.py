@@ -11,6 +11,11 @@ Tests verify:
   - reset_collection() calls client.recreate_collection with correct params
   - upsert() builds correct PointStruct list and calls client.upsert
   - upsert() stores doc_id, claim_id, text, doc_type in the payload
+  - _document_to_payload()/upsert() additionally store full poisoning
+    provenance (attack_name, attack_params, original_text, annotation) for
+    PoisonedDocument instances, and omit those keys entirely for plain
+    Document instances (Sprint 4 audit fix — see qdrant_store.py's and
+    retriever.py's module docstrings for the bug this closes)
   - search() calls client.search with correct params and maps results to dicts
   - search() returns list of dicts with doc_id, score, payload keys
 
@@ -26,8 +31,8 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from eiger.core.models import Document
-from eiger.vector_stores.qdrant_store import QdrantVectorStore
+from eiger.core.models import Document, PoisonAnnotation, PoisonedDocument
+from eiger.vector_stores.qdrant_store import QdrantVectorStore, _document_to_payload
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -39,6 +44,27 @@ def _make_doc(doc_id: str = "doc-001", claim_id: str = "C1") -> Document:
         claim_id=claim_id,
         text="The inflation rate rose to 3.5% in 2023.",
         doc_type="ground_truth",
+    )
+
+
+def _make_poisoned_doc(
+    doc_id: str = "doc-002",
+    claim_id: str = "C1",
+    with_annotation: bool = True,
+) -> PoisonedDocument:
+    """Return a minimal PoisonedDocument, with or without an annotation."""
+    return PoisonedDocument(
+        doc_id=doc_id,
+        claim_id=claim_id,
+        text="The inflation rate rose to 35.% in 2023.",
+        attack_name="numerical_shift",
+        attack_params={"shift_amount": 1},
+        original_text="The inflation rate rose to 3.5% in 2023.",
+        annotation=(
+            PoisonAnnotation(plausibility=4.0, verification_difficulty=3.0, editorial_risk=2.0)
+            if with_annotation
+            else None
+        ),
     )
 
 
@@ -221,6 +247,66 @@ class TestUpsert:
         assert payload["claim_id"] == "C42"
         assert payload["text"] == doc.text
         assert payload["doc_type"] == "ground_truth"
+
+    def test_ground_truth_payload_has_no_poisoning_fields(self) -> None:
+        """
+        A plain (non-poisoned) Document's payload must not carry
+        attack_name/attack_params/original_text/annotation keys at all —
+        distinguishing "not poisoned" from "poisoned but not yet annotated".
+        """
+        payload = _document_to_payload(_make_doc())
+        for key in ("attack_name", "attack_params", "original_text", "annotation"):
+            assert key not in payload
+
+    def test_poisoned_payload_carries_full_provenance(self) -> None:
+        """
+        Regression test (Sprint 4 audit): a PoisonedDocument's payload must
+        include attack_name/attack_params/original_text/annotation, so that
+        DenseRetriever can reconstruct a real PoisonedDocument at retrieval
+        time and eiger.metrics.ers.ERSMetric does not silently see every
+        document as unpoisoned. Before this fix, these fields were dropped
+        entirely by upsert().
+        """
+        doc = _make_poisoned_doc()
+        payload = _document_to_payload(doc)
+        assert payload["doc_type"] == "poisoned"
+        assert payload["attack_name"] == "numerical_shift"
+        assert payload["attack_params"] == {"shift_amount": 1}
+        assert payload["original_text"] == "The inflation rate rose to 3.5% in 2023."
+        assert payload["annotation"] == {
+            "plausibility": 4.0,
+            "verification_difficulty": 3.0,
+            "editorial_risk": 2.0,
+        }
+
+    def test_poisoned_payload_without_annotation_is_none(self) -> None:
+        """A PoisonedDocument with no annotation yet must serialize annotation as None."""
+        doc = _make_poisoned_doc(with_annotation=False)
+        payload = _document_to_payload(doc)
+        assert payload["annotation"] is None
+
+    def test_upsert_includes_poisoning_provenance_in_real_call(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """End-to-end: upsert() itself (not just the helper) must produce a
+        payload with full poisoning provenance for a PoisonedDocument."""
+        doc = _make_poisoned_doc()
+        store, mock_client = _make_store_with_mock_client()
+        captured_points: list[dict] = []
+
+        mock_models = MagicMock()
+        def capture_point(**kw):
+            captured_points.append(kw)
+            return kw
+        mock_models.PointStruct.side_effect = capture_point
+        monkeypatch.setitem(sys.modules, "qdrant_client.models", mock_models)
+
+        with patch("eiger.vector_stores.qdrant_store.log"):
+            store.upsert("corpus", [doc], [[0.0] * 384])
+
+        payload = captured_points[0]["payload"]
+        assert payload["attack_name"] == "numerical_shift"
+        assert payload["annotation"]["plausibility"] == 4.0
 
     def test_point_id_is_index(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Point IDs must be the list indices (0, 1, 2, …) for idempotent upserts."""

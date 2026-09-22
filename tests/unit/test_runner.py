@@ -54,6 +54,7 @@ from eiger.core.models import (
     RetrieverConfig,
 )
 from eiger.experiments.runner import ExperimentRunner
+from eiger.retrieval import SparseRetriever
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -90,13 +91,16 @@ def _make_config(
     collection_name: str = "eiger_corpus",
     temperature: float = 0.0,
     max_tokens: int = 512,
+    retriever_type: str = "dense",
 ) -> ExperimentConfig:
     """Build a minimal, valid ExperimentConfig for runner tests."""
     return ExperimentConfig(
         seed=42,
         dataset=DatasetConfig(name="test_fixture"),
         attacks=attacks if attacks is not None else [],
-        retriever=RetrieverConfig(top_k=top_k, collection_name=collection_name),
+        retriever=RetrieverConfig(
+            type=retriever_type, top_k=top_k, collection_name=collection_name
+        ),
         llm=LLMConfig(temperature=temperature, max_tokens=max_tokens),
         metrics=metrics if metrics is not None else [],
         output_dir=str(tmp_path),
@@ -192,6 +196,15 @@ class TestExperimentRunnerInit:
         assert runner.retriever.vector_store is mock_vector_store
         assert runner.retriever.collection == runner.collection
 
+    def test_retriever_type_defaults_to_dense(self, tmp_path: Path) -> None:
+        runner, _, _, _ = _make_runner(tmp_path)
+        assert runner.retriever_type == "dense"
+
+    def test_sparse_retriever_type_builds_sparse_retriever(self, tmp_path: Path) -> None:
+        runner, _, _, _ = _make_runner(tmp_path, retriever_type="sparse")
+        assert isinstance(runner.retriever, SparseRetriever)
+        assert runner.retriever_type == "sparse"
+
 
 # ─── run() — corpus / attack resolution ───────────────────────────────────────
 
@@ -243,6 +256,56 @@ class TestRunIngestion:
         runner, _, mock_vector_store, _ = _make_runner(tmp_path)
         runner.run([_make_claim()], save=False)
         mock_vector_store.upsert.assert_called_once()
+
+
+# ─── run() — sparse retriever path ─────────────────────────────────────────────
+
+class TestRunSparseRetriever:
+    """Tests for run() when config.retriever.type == 'sparse' (Sprint 4)."""
+
+    def test_sparse_run_skips_vector_store_ingestion(self, tmp_path: Path) -> None:
+        """
+        A sparse-only run must not touch the vector store at all — that is
+        the entire point of SparseRetriever owning its own in-memory index
+        (see its module docstring).
+        """
+        runner, _, mock_vector_store, _ = _make_runner(tmp_path, retriever_type="sparse")
+        runner.run([_make_claim()], save=False)
+        mock_vector_store.reset_collection.assert_not_called()
+        mock_vector_store.upsert.assert_not_called()
+
+    def test_sparse_run_ranks_by_lexical_overlap(self, tmp_path: Path) -> None:
+        """
+        End-to-end proof that ExperimentRunner actually drives BM25 ranking:
+        two claims share the same context_query, but only one's ground-truth
+        document shares vocabulary with it. SparseRetriever must retrieve
+        that document (and not the other) for both claims.
+        """
+        runner, _, _, mock_llm = _make_runner(tmp_path, retriever_type="sparse", top_k=1)
+        claim_a = Claim(
+            claim_id="A",
+            original_fact="The central bank raised interest rates to control inflation.",
+            context_query="What happened to inflation?",
+            source_dataset="test_fixture",
+        )
+        claim_b = Claim(
+            claim_id="B",
+            original_fact="The football team won the championship match yesterday.",
+            context_query="What happened to inflation?",
+            source_dataset="test_fixture",
+        )
+        runner.run([claim_a, claim_b], save=False)
+        for call in mock_llm.build_rag_prompt.call_args_list:
+            _, context_docs = call.args
+            assert context_docs == [
+                "The central bank raised interest rates to control inflation."
+            ]
+
+    def test_sparse_run_with_no_claims_produces_empty_result(self, tmp_path: Path) -> None:
+        runner, _, _, mock_llm = _make_runner(tmp_path, retriever_type="sparse")
+        result = runner.run([], save=False)
+        assert result.records == []
+        mock_llm.build_rag_prompt.assert_not_called()
 
 
 # ─── run() — retrieval & generation ────────────────────────────────────────────

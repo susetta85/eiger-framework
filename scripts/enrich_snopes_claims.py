@@ -21,10 +21,16 @@ What this script does
    include: ``claim_id``, ``claim``, ``url``, ``date_published``,
    ``original_verdict``, ``normalised_rating``; column order is not
    assumed, only names (read from the header row of the first sheet).
-2. Keeps only rows where ``normalised_rating`` is exactly ``True``
-   (verified-true claims — ``Claim.original_fact`` must be a true
-   statement; EIGER generates its own falsehoods via the attack registry,
-   it does not import externally-sourced false claims as ground truth).
+2. Keeps only rows where ``normalised_rating`` is exactly ``True`` AND
+   ``original_verdict`` corroborates that (see
+   ``_VERIFIED_TRUE_ORIGINAL_VERDICTS`` below) — verified-true claims
+   (``Claim.original_fact`` must be a true statement; EIGER generates its
+   own falsehoods via the attack registry, it does not import
+   externally-sourced false claims as ground truth). The cross-check
+   against ``original_verdict`` was added after a Sprint 4 audit found that
+   ``normalised_rating`` alone let contaminated rows through (see that
+   constant's docstring for details and how to clean an already-generated
+   output file).
 3. Deduplicates by ``claim_id`` (first occurrence wins) — the raw export
    has been observed to contain a small number of duplicate claim_ids.
 4. For each surviving claim, generates a natural-language question via a
@@ -131,15 +137,43 @@ def _read_raw_rows(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+# Verdict strings (case/whitespace-insensitive) confirmed consistent with
+# a "verified true" claim. Bug fix (Sprint 4 audit): a spot-check of the
+# already-generated data/snopes/snopes_enriched.json (which trusted
+# normalised_rating alone) found 458 of 3,400 claims (13.5%) whose
+# original_verdict directly contradicted "verified true" — e.g.
+# original_verdict=Fake/Unproven/Research In Progress/Mixture/Miscaptioned/
+# Outdated/Misattributed/Altered/Scam/Legend/Labeled Satire/False, despite
+# normalised_rating being True for every one of them. This is deliberately
+# an allowlist, not a denylist: original_verdict is free-text from the raw
+# export, so a denylist could never enumerate every non-true value in
+# advance, whereas the two values below are the only ones actually
+# confirmed (by manual inspection) to mean "true" in this export. Being
+# conservative here (excluding anything not explicitly allowed) is the
+# safe direction for ground-truth data feeding a research paper's metrics.
+# To clean an already-generated output file against this same check, see
+# scripts/clean_snopes_contamination.py.
+_VERIFIED_TRUE_ORIGINAL_VERDICTS = frozenset({"true", "correct attribution"})
+
+
+def _is_verdict_consistent_with_true(original_verdict: Any) -> bool:
+    """Return True iff original_verdict corroborates a verified-true claim."""
+    return str(original_verdict).strip().lower() in _VERIFIED_TRUE_ORIGINAL_VERDICTS
+
+
 def filter_and_dedupe(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
-    Keep only ``normalised_rating is True`` rows, deduplicated by
-    ``claim_id`` (first occurrence wins), preserving original file order.
+    Keep only rows where ``normalised_rating`` is exactly ``True`` and
+    ``original_verdict`` corroborates that (see
+    ``_VERIFIED_TRUE_ORIGINAL_VERDICTS``), deduplicated by ``claim_id``
+    (first occurrence wins), preserving original file order.
     """
     seen_ids: set[Any] = set()
     kept: list[dict[str, Any]] = []
     for row in rows:
         if row.get("normalised_rating") is not True:
+            continue
+        if not _is_verdict_consistent_with_true(row.get("original_verdict")):
             continue
         claim_id = row.get("claim_id")
         if claim_id in seen_ids:

@@ -13,11 +13,15 @@ Pipeline position
         ▼  CorpusBuilder.build(claims)                      — attacks resolved via registry
     CorpusBuilderResult (ground-truth + poisoned Documents)
         │
-        ▼  IngestionPipeline.ingest(corpus)                 — embed + upsert
-    (vector store populated)
+        ▼  retriever.type == "dense" (default):
+        │     IngestionPipeline.ingest(corpus)               — embed + upsert
+        │   (vector store populated)
+        ▼  retriever.type == "sparse":
+        │     SparseRetriever.fit(corpus.all_documents)       — build BM25 index
+        │   (vector store untouched — no Qdrant/embedder network calls at all)
         │
         ▼  for each claim:
-        │     DenseRetriever.retrieve()  → RetrievalResult
+        │     retriever.retrieve()  → RetrievalResult   (Dense- or SparseRetriever)
         │     BaseLLM.build_rag_prompt() + generate() → GenerationResult
         │     [faithfulness_scorer(claim, generation)]  → optional RAGAS-style scores
         │   → EvaluationRecord
@@ -71,6 +75,16 @@ Design decisions
   warning is logged once per run: the resulting FFR values would silently
   be 0.0 for every record (faithfulness/correctness default to 0.0), which
   is NOT a valid experimental measurement and must not be reported as one.
+- **Retriever choice branches in two places, not via a factory**: ``__init__``
+  picks ``DenseRetriever`` or ``SparseRetriever`` based on
+  ``config.retriever.type``, and ``run()`` correspondingly either calls
+  ``ingestion_pipeline.ingest(corpus)`` (dense) or
+  ``SparseRetriever.fit(corpus.all_documents)`` (sparse) — see
+  ``eiger/retrieval/sparse_retriever.py``'s module docstring for why
+  ``fit()`` cannot be folded into a common ``BaseRetriever`` method.
+  ``HybridRetriever`` (RRF fusion of both) remains future work; when it
+  lands, it will most likely need both branches to run together rather
+  than as an ``if``/``else``.
 - **Fail loud, no per-claim error swallowing**: a single claim's retrieval
   or generation failure aborts the whole run (RetrievalError/GenerationError
   propagate unchanged). Silently skipping failed claims would silently bias
@@ -111,7 +125,7 @@ from eiger.core.models import (
 )
 from eiger.ingestion import CorpusBuilder, CorpusBuilderResult, IngestionPipeline
 from eiger.metrics import get_metric
-from eiger.retrieval import DenseRetriever
+from eiger.retrieval import DenseRetriever, SparseRetriever
 from eiger.utils.logging import get_logger
 from eiger.utils.seeding import seed_everything
 
@@ -174,16 +188,30 @@ class ExperimentRunner:
 
         self.collection = config.retriever.collection_name
         self.top_k = config.retriever.top_k
+        self.retriever_type = config.retriever.type
 
         # Both components share the same embedder/vector_store/collection,
         # which is the correctness requirement documented on BaseEmbedder
-        # and BaseRetriever.
+        # and BaseRetriever. Constructed unconditionally even for sparse
+        # retrieval (harmless — both are lazy, no network I/O happens here)
+        # so that switching retriever.type in config never requires
+        # touching this constructor's call site.
         self.ingestion_pipeline = IngestionPipeline(
             embedder=embedder, vector_store=vector_store, collection=self.collection
         )
-        self.retriever = DenseRetriever(
-            embedder=embedder, vector_store=vector_store, collection=self.collection
-        )
+
+        # SparseRetriever owns its own in-memory corpus (see its module
+        # docstring for why it cannot read from BaseVectorStore) and is
+        # populated via fit() in run(), once the corpus exists — unlike
+        # DenseRetriever, which is fully usable as soon as the vector store
+        # is populated by ingestion_pipeline.ingest().
+        self.retriever: DenseRetriever | SparseRetriever
+        if self.retriever_type == "sparse":
+            self.retriever = SparseRetriever()
+        else:
+            self.retriever = DenseRetriever(
+                embedder=embedder, vector_store=vector_store, collection=self.collection
+            )
 
     # ─── Public API ────────────────────────────────────────────────────────────
 
@@ -225,7 +253,14 @@ class ExperimentRunner:
         self._warn_if_ffr_unsupported()
 
         corpus = self._build_corpus(claims)
-        self.ingestion_pipeline.ingest(corpus)
+        if self.retriever_type == "sparse":
+            # SparseRetriever needs the explicit document list (see its
+            # module docstring); it does not touch the vector store at all,
+            # so ingestion_pipeline.ingest() is skipped entirely — a
+            # sparse-only run does not require Qdrant to be reachable.
+            self.retriever.fit(corpus.all_documents)  # type: ignore[union-attr]
+        else:
+            self.ingestion_pipeline.ingest(corpus)
 
         records = [self._evaluate_claim(claim) for claim in claims]
 

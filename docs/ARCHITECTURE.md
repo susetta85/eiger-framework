@@ -1,6 +1,6 @@
 # EIGER Framework — Architecture Reference
 
-> Version: 0.1.0 | Sprint 3 (dataset layer + CLI)
+> Version: 0.1.0 | Sprint 3 complete (dataset layer + CLI) — Sprint 4 planned
 > Package: `eiger` | Python >= 3.10
 
 ---
@@ -24,6 +24,8 @@
 ## 1. Overview
 
 EIGER (Epistemic Integrity Gauge for Epistemic Robustness) is a research framework for measuring how susceptible Retrieval-Augmented Generation (RAG) systems are to corpus poisoning attacks. The companion benchmark suite is called EIBench.
+
+**Project claim and research questions.** This document describes the engineering architecture. The project's actual research claim, its five research questions (RQ1–RQ5) and companion hypotheses (H1–H5), the full threat model, the manipulation taxonomy, and an honest gap analysis against the multidisciplinary research proposal are maintained in [`docs/CLAIM_AND_RESEARCH_QUESTIONS.md`](CLAIM_AND_RESEARCH_QUESTIONS.md) — read that document first if you are new to the project.
 
 The framework is organized around three guiding principles:
 
@@ -71,10 +73,16 @@ RAG poisoning/robustness is an active, fast-moving research area. This section p
 
 Honest gaps that should be closed before FFR/ERS results are treated as publication-ready, or before positioning this as "the" community platform (see also docs/DATASETS.md section 11 and each dataset's own "not yet independently reviewed" note):
 
+- **Fixed in the Sprint 4 audit, but affects any results already computed with the default dense retriever**: `ERSMetric` silently returned `0.0` for every record under `retriever.type="dense"` (the default), because `QdrantVectorStore.upsert()` dropped `PoisonedDocument`'s provenance fields (`attack_name`/`attack_params`/`original_text`/`annotation`) and `DenseRetriever` always reconstructed a plain `Document`, making `isinstance(doc, PoisonedDocument)` always false in `ERSMetric.compute()`. Fixed by round-tripping full provenance through the Qdrant payload (see `eiger/vector_stores/qdrant_store.py`'s and `eiger/retrieval/retriever.py`'s module docstrings). `SparseRetriever` was never affected (it keeps original in-memory object references). **Any ERS number from a dense-retriever run predating this fix is not a valid measurement** — re-run before reporting.
+- **Known ground-truth data contamination, found in the Sprint 4 audit, not yet cleaned.** The live `data/snopes/snopes_enriched.json` has ~13.5% of claims whose original Snopes verdict contradicts "verified true" (see `docs/DATASETS.md` §8 and `scripts/clean_snopes_contamination.py`). Any metric computed from Snopes-sourced claims before running that cleanup script should be treated as unreliable.
+- **`CausalManipulationAttack` had a decimal-point sentence-splitting bug, fixed in the Sprint 4 audit.** `_SENTENCE_END_RE` could not distinguish a decimal point (e.g. in "3.5%") from a sentence-ending period, so a numeric fact could be split apart and corrupted by an injected causal clause. Fixed via `_split_sentences()`'s decimal-masking approach in `eiger/attacks/causal.py`.
+- **Three of the four built-in attacks (`numerical_shift`, `attribution_switch`, `date_manipulation`) can silently no-op** — if a document has no digits/known-entity/year to modify, `apply()` still returns a `PoisonedDocument` with a full risk annotation and `doc_type="poisoned"`, byte-identical to the ground truth. This inflates `poison_ratio` and can bias attack-effectiveness comparisons. Found in the Sprint 4 audit; **not yet fixed** — see `docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §9 for the proposed fix direction.
 - **Faithfulness/correctness scoring is currently a heuristic proxy, not validated.** `EmbeddingFaithfulnessScorer` (Section 3's Layer 5, `eiger/metrics/heuristic_scorer.py`) approximates `ragas_faithfulness`/`ragas_answer_correctness` via cosine similarity — it is not the real RAGAS pipeline, nor has it been calibrated against human judgments or an LLM-judge (à la FaithJudge). This is the single biggest scientific-validity risk in the current codebase: FFR/ERS numbers computed with this proxy should be treated as a placeholder signal, not a validated measurement, until either RAGAS is properly wired in or the proxy is calibrated against a human-annotated sample.
 - **External datasets are not yet independently reviewed.** Every claim loaded via `SnopesDataset`/`AVeriTecDataset`/`PolitiFactDataset`/`FactCheckDataset` is tagged `metadata["verified"] = False` pending a research-team spot-check, even though each upstream source already rates them as true/verified.
 - **`context_query` is a templated fallback for three of four external datasets.** AVeriTeC uses real evidence questions and Snopes uses LLM-generated questions, but PolitiFact and FactCheck.org currently get a generic `"Is it true that {claim}?"` template (see docs/DATASETS.md sections 4-5), which may understate retrieval difficulty relative to how an independent user would actually phrase a question — worth an ablation or a future LLM-enrichment pass (mirroring `scripts/enrich_snopes_claims.py`) before drawing conclusions from those two datasets.
 - **No head-to-head comparison against stronger, optimized attacks yet.** EIGER's four attacks are all "soft edits" to true documents; their relative strength against PoisonedRAG-style adversarially-optimized injected text (or RAGuard-style as-is misinformation) is currently unquantified, since no shared benchmark run has been done across frameworks.
+- **Two of six manipulation types in the project's own taxonomy are unimplemented, and a parallel LLM-based claim-generation pipeline is not yet integrated.** See [`docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §5, §7](CLAIM_AND_RESEARCH_QUESTIONS.md#5-manipulation-taxonomy-m01m06) for the manipulation taxonomy gap (M05/M06) and the two-pipeline reconciliation question (mechanical `eiger/attacks/` vs. the team's Mistral/Ollama v3-generated corpus).
+- **PRR@k, PRD@1, PCS, and EVD — four metrics named in the research proposal — are not yet implemented.** FFR/SI/ERS cover part of the proposal's intended metric set; PRR@k/PRD@1 are cheap wins computable from existing `RetrievalResult` data, PCS needs counterfactual re-generation support, and EVD requires the (not yet built) human-in-the-loop study. See [`docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §6](CLAIM_AND_RESEARCH_QUESTIONS.md#6-metrics-proposed-vs-implemented).
 
 ---
 
@@ -116,7 +124,7 @@ Given a `context_query` from a `Claim`, retrieves the top-k most similar documen
 | Vector search | Calls `BaseVectorStore.search()` returning ranked document dicts |
 | Result wrapping | Produces a `RetrievalResult` with ranked `RetrievedDocument` hits |
 | Poison detection | `RetrievalResult.contains_poisoned` and `poison_ratio` are derived properties |
-| Status | ✅ Sprint 2 — `DenseRetriever` via Qdrant implemented; `SparseRetriever`/`HybridRetriever` planned |
+| Status | ✅ Sprint 2 — `DenseRetriever` via Qdrant implemented; ✅ Sprint 4 — `SparseRetriever` (BM25 via `rank-bm25`) implemented; `HybridRetriever` (RRF fusion) planned |
 
 ### Layer 4 — Generation (`eiger/llm/`)
 

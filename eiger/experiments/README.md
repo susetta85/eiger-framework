@@ -35,7 +35,7 @@ building them from `config.retriever.embedder` / `config.retriever.vector_store`
 component factory yet — those config string fields exist purely for
 provenance (serialized into every result file); the caller is responsible for
 constructing matching objects and injecting them. This mirrors the DI pattern
-already used by `DenseRetriever` and `IngestionPipeline`, and keeps
+already used by `DenseRetriever`/`SparseRetriever` and `IngestionPipeline`, and keeps
 `ExperimentRunner` trivially testable with mocks.
 
 **No dataset loader yet.** `run()` accepts an already-loaded `list[Claim]`
@@ -54,11 +54,12 @@ list[Claim]
     ▼  CorpusBuilder.build(claims)                  — attacks resolved via get_attack()
 CorpusBuilderResult
     │
-    ▼  IngestionPipeline.ingest(corpus)             — embed + upsert
-(vector store populated)
+    ▼  retriever.type == "dense": IngestionPipeline.ingest(corpus) — embed + upsert
+    ▼  retriever.type == "sparse" (Sprint 4): SparseRetriever.fit(corpus.all_documents)
+(vector store populated, or BM25 index built — see ExperimentRunner's own docstring)
     │
     ▼  for each claim:
-    │     DenseRetriever.retrieve()  → RetrievalResult
+    │     retriever.retrieve()  → RetrievalResult   (Dense- or SparseRetriever)
     │     BaseLLM.build_rag_prompt() + generate()   → GenerationResult
     │     [faithfulness_scorer(claim, generation)]  → optional pre-metric scores
     │   → EvaluationRecord

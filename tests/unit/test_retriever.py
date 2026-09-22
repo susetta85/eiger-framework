@@ -8,6 +8,11 @@ Tests verify:
   - retrieve() returns a RetrievalResult with correct query/claim_id/top_k
   - hits are built in rank order (1, 2, 3, …)
   - each hit's Document is correctly reconstructed from the payload
+  - a payload with doc_type == "poisoned" and full provenance fields
+    reconstructs as a real PoisonedDocument (with attack_name/attack_params/
+    original_text/annotation restored), not a plain Document — Sprint 4
+    audit regression tests; see TestPoisonedDocumentReconstruction and
+    qdrant_store.py's/retriever.py's module docstrings for the bug this closes
   - score normalization maps raw cosine similarity [-1, 1] into [0, 1]
   - score normalization clamps out-of-range floating point values
   - empty search results produce an empty hits list
@@ -30,7 +35,7 @@ import pytest
 
 from eiger.core.exceptions import RetrievalError
 from eiger.core.interfaces import BaseEmbedder, BaseVectorStore
-from eiger.core.models import RetrievalResult
+from eiger.core.models import PoisonedDocument, RetrievalResult
 from eiger.retrieval.retriever import DenseRetriever
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -67,6 +72,34 @@ def _make_raw_hit(
             "claim_id": claim_id,
             "text": text,
             "doc_type": "ground_truth",
+        },
+    }
+
+
+def _make_poisoned_raw_hit(
+    doc_id: str,
+    score: float,
+    claim_id: str = "C1",
+    text: str = "poisoned text",
+    original_text: str = "original text",
+    attack_name: str = "numerical_shift",
+    attack_params: dict[str, Any] | None = None,
+    annotation: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    """Build a raw hit dict for a poisoned document, in the shape
+    QdrantVectorStore._document_to_payload() actually produces."""
+    return {
+        "doc_id": doc_id,
+        "score": score,
+        "payload": {
+            "doc_id": doc_id,
+            "claim_id": claim_id,
+            "text": text,
+            "doc_type": "poisoned",
+            "attack_name": attack_name,
+            "attack_params": attack_params if attack_params is not None else {},
+            "original_text": original_text,
+            "annotation": annotation,
         },
     }
 
@@ -246,6 +279,91 @@ class TestRetrieveResultAssembly:
         retriever, _, _ = _make_retriever(search_results=raw_hits)
         result = retriever.retrieve("query", claim_id="C1", top_k=5)
         assert [h.document.doc_id for h in result.hits] == ["first", "second"]
+
+
+# ─── PoisonedDocument reconstruction (Sprint 4 audit regression tests) ────────
+
+class TestPoisonedDocumentReconstruction:
+    """
+    Regression tests for the bug where a retrieved "poisoned" hit was always
+    rebuilt as a plain Document, silently discarding attack_name/
+    attack_params/original_text/annotation — which made
+    eiger.metrics.ers.ERSMetric always see isinstance(doc, PoisonedDocument)
+    as False and report 0.0 for every dense-retrieval experiment.
+    """
+
+    def test_poisoned_hit_reconstructs_as_poisoned_document(self) -> None:
+        raw_hits = [_make_poisoned_raw_hit("doc-1", 0.9)]
+        retriever, _, _ = _make_retriever(search_results=raw_hits)
+        result = retriever.retrieve("query", claim_id="C1", top_k=5)
+        assert isinstance(result.hits[0].document, PoisonedDocument)
+
+    def test_poisoned_document_fields_are_restored(self) -> None:
+        raw_hits = [
+            _make_poisoned_raw_hit(
+                "doc-1",
+                0.9,
+                text="The rate rose to 35.%",
+                original_text="The rate rose to 3.5%",
+                attack_name="numerical_shift",
+                attack_params={"shift_amount": 1},
+            )
+        ]
+        retriever, _, _ = _make_retriever(search_results=raw_hits)
+        result = retriever.retrieve("query", claim_id="C1", top_k=5)
+        doc = result.hits[0].document
+        assert isinstance(doc, PoisonedDocument)
+        assert doc.text == "The rate rose to 35.%"
+        assert doc.original_text == "The rate rose to 3.5%"
+        assert doc.attack_name == "numerical_shift"
+        assert doc.attack_params == {"shift_amount": 1}
+
+    def test_poisoned_document_annotation_is_restored(self) -> None:
+        raw_hits = [
+            _make_poisoned_raw_hit(
+                "doc-1",
+                0.9,
+                annotation={
+                    "plausibility": 4.0,
+                    "verification_difficulty": 3.0,
+                    "editorial_risk": 2.0,
+                },
+            )
+        ]
+        retriever, _, _ = _make_retriever(search_results=raw_hits)
+        result = retriever.retrieve("query", claim_id="C1", top_k=5)
+        annotation = result.hits[0].document.annotation
+        assert annotation is not None
+        assert annotation.plausibility == 4.0
+        assert annotation.verification_difficulty == 3.0
+        assert annotation.editorial_risk == 2.0
+
+    def test_poisoned_document_without_annotation_is_none(self) -> None:
+        raw_hits = [_make_poisoned_raw_hit("doc-1", 0.9, annotation=None)]
+        retriever, _, _ = _make_retriever(search_results=raw_hits)
+        result = retriever.retrieve("query", claim_id="C1", top_k=5)
+        assert result.hits[0].document.annotation is None
+
+    def test_ground_truth_hit_still_reconstructs_as_plain_document(self) -> None:
+        """Non-regression: a ground_truth payload (no provenance fields at
+        all) must still reconstruct as a plain Document, not raise."""
+        raw_hits = [_make_raw_hit("doc-1", 0.9)]
+        retriever, _, _ = _make_retriever(search_results=raw_hits)
+        result = retriever.retrieve("query", claim_id="C1", top_k=5)
+        assert not isinstance(result.hits[0].document, PoisonedDocument)
+
+    def test_legacy_poisoned_payload_without_provenance_degrades_gracefully(self) -> None:
+        """
+        Defensive fallback: a payload with doc_type == "poisoned" but no
+        attack_name (as any pre-fix upsert() would have written) must
+        degrade to a plain Document rather than raising a KeyError.
+        """
+        raw_hits = [_make_raw_hit("doc-1", 0.9)]
+        raw_hits[0]["payload"]["doc_type"] = "poisoned"
+        retriever, _, _ = _make_retriever(search_results=raw_hits)
+        result = retriever.retrieve("query", claim_id="C1", top_k=5)
+        assert not isinstance(result.hits[0].document, PoisonedDocument)
+        assert result.hits[0].document.doc_type == "poisoned"
 
 
 # ─── Score normalization ──────────────────────────────────────────────────────

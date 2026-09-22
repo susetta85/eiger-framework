@@ -24,13 +24,17 @@ Design decisions
   resolving ``config.retriever`` / ``config.llm`` string fields into concrete
   instances and injecting them.
 - **Only currently-implemented backends are supported**: ``retriever.type``
-  must be "dense", ``retriever.vector_store`` must be "qdrant", and
-  ``llm.backend`` must be "ollama" — matching what actually exists in
-  eiger.retrieval / eiger.vector_stores / eiger.llm today. Requesting any
-  other value (e.g. the "sparse"/"hybrid"/"openai" values the config models
-  already accept for forward-compatibility) raises ConfigurationError with
-  an explicit, actionable message rather than failing confusingly deeper in
-  the stack.
+  must be "dense" or "sparse" (Sprint 4 — see ``eiger.retrieval.SparseRetriever``),
+  ``retriever.vector_store`` must be "qdrant", and ``llm.backend`` must be
+  "ollama" — matching what actually exists in eiger.retrieval /
+  eiger.vector_stores / eiger.llm today. Requesting any other value (e.g.
+  "hybrid"/"openai", which the config models already accept for
+  forward-compatibility) raises ConfigurationError with an explicit,
+  actionable message rather than failing confusingly deeper in the stack.
+  Note that ``retriever.vector_store``/``retriever.embedder`` are still
+  validated and used even for ``type="sparse"`` runs, because the embedder
+  is also needed by ``EmbeddingFaithfulnessScorer`` — only the vector store
+  ends up unused in that case (see ``ExperimentRunner``'s own docstring).
 - **EmbeddingFaithfulnessScorer is always wired in**: it is dependency-free
   and safe by construction (see its own module docstring), so there is no
   reason to make the CLI user opt in explicitly. It is still just a proxy,
@@ -82,7 +86,7 @@ log = get_logger(__name__)
 # Only these values are backed by a real implementation today. Kept as
 # explicit sets (rather than inferring from a factory dict) so the error
 # message can list every supported option without extra bookkeeping.
-_SUPPORTED_RETRIEVER_TYPES = {"dense"}
+_SUPPORTED_RETRIEVER_TYPES = {"dense", "sparse"}
 _SUPPORTED_VECTOR_STORES = {"qdrant"}
 _SUPPORTED_LLM_BACKENDS = {"ollama"}
 

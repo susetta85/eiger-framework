@@ -1,6 +1,6 @@
 # EIGER Datasets — Reference Guide
 
-> Version: 0.1.0 | Sprint 1 baseline
+> Version: 0.1.0 | Sprint 3 complete (dataset layer) — Sprint 4 planned
 
 ---
 
@@ -31,6 +31,8 @@ EIBench requires datasets composed of verifiable factual claims — statements w
 Fact-checking corpora — originally created for automated claim verification research — satisfy both requirements. They provide structured claims with verified verdicts, supporting evidence, and domain coverage across politics, science, economics, and health.
 
 This is also what distinguishes EIBench's approach from benchmarks that sample naturally-occurring misinformation as-is (e.g. RAGuard) or inject adversarially-optimized text (e.g. PoisonedRAG): every poisoned document here starts from a real, independently-verified true claim, and the poisoning engine (Section 3's Layer 2 of `docs/ARCHITECTURE.md`) applies one specific, well-defined type of factual edit to it. See `docs/ARCHITECTURE.md` §2 ("Related Work and Positioning") for the full literature comparison and an honest list of current limitations.
+
+**Note on a second, parallel claim source.** The four loaders in this document are the automated path from raw fact-checking exports to `Claim` objects, feeding `eiger.attacks`' own mechanical poisoning strategies. The project team separately maintains a much larger, human-curated claim corpus (6,591 claims across Snopes/PolitiFact/FactCheck.org, produced by a dedicated Mistral/Ollama pipeline with topic/risk/sensitivity classification and — for a large subset — already-generated LLM poisoned variants) that is **not yet ingested by any loader in this file**. See [`docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §7](CLAIM_AND_RESEARCH_QUESTIONS.md#7-data-assets-two-parallel-claim-pipelines) for the full picture and the open integration decision.
 
 ---
 
@@ -353,6 +355,8 @@ Two things the raw export does NOT have, which `scripts/enrich_snopes_claims.py`
 
 **Verification status.** Every claim produced by the enrichment script is tagged `metadata["verified"] = false`, even though Snopes itself already rated it `True` — Snopes' own rating is not treated as a substitute for this research team's own review before a claim is reported on in published results. See `scripts/README.md` for the full collect → filter → enrich → (team) verify workflow, which mirrors the manual claim-intake workflow (`scripts/import_claims_xlsx.py`) but for bulk external data instead of hand-authored claims.
 
+**Known data-quality issue, found and fixed (Sprint 4 audit).** `filter_and_dedupe()` originally trusted the raw export's `normalised_rating` column alone, without cross-checking the same row's own `original_verdict` (already carried into every output entry's `notes` field, but never validated). A spot-check of the live `data/snopes/snopes_enriched.json` found 458 of 3,400 claims generated so far (13.5%) whose `original_verdict` directly contradicted "verified true" (e.g. `Fake`, `Unproven`, `Research In Progress`, `Mixture`, `Miscaptioned`, `Outdated`, `Misattributed`, `Altered`, `Scam`, `Legend`, `Labeled Satire`, `False`) despite `normalised_rating` being `True` for every one of them — a direct violation of this project's core verified-true-only ground-truth invariant. `filter_and_dedupe()` now cross-checks `original_verdict` too (see `_VERIFIED_TRUE_ORIGINAL_VERDICTS` in `scripts/enrich_snopes_claims.py`), fixing this for future/resumed enrichment runs. **The already-generated file has not yet been cleaned** — run `python scripts/clean_snopes_contamination.py` before trusting any FFR/ERS/Source Integrity numbers computed from the current `data/snopes/snopes_enriched.json`; see that script's own docstring for exactly what it does.
+
 ### Location & running the enrichment
 
 The raw `Snopes.xlsx` and the enriched output are **not** committed to Git (`data/` is gitignored — too large, and not ours to redistribute). To (re)generate the enriched file locally:
@@ -540,6 +544,7 @@ print(f"Content hash: {ds.content_hash}")
 | PolitiFact via LIAR (English, ~12,800 claims, "true"-label subset) | Sprint 3 | **Implemented (loader only).** `PolitiFactDataset` — parsing/filtering/`Claim` construction fully implemented and unit-tested (Section 4). `download()` is a guard, not a fetcher. Not yet independently reviewed. Note: the team also has a bulk PolitiFact export on hand (`politifact_true.csv`/`politifact_false.csv`, id/claim/date only, no source URL) — not used by this loader, which targets the standard LIAR TSV format instead; the team's export remains a lower-priority alternative source due to the missing per-row source link and minor non-English contamination in the false subset. |
 | FactCheck.org via CheckThat! (English, ~3,000 claims, "true"-verdict subset) | Sprint 4 | **Implemented (loader only).** `FactCheckDataset` — parsing/filtering/`Claim` construction fully implemented and unit-tested (Section 5). `download()` is a guard, not a fetcher. Raw file format (assumed JSONL) not independently re-verified — see Section 5's format caveat. Not yet independently reviewed. Note: the team also has a 50-row bulk-extracted `factcheck_false.csv`, every row explicitly flagged `needs_manual_check: True` — candidate FALSE claims requiring manual review, not a source of `Claim.original_fact` ground truth, and not used by this loader. |
 | Multi-lingual extension (Italian, French, German) | Sprint 5 | Planned. Cross-lingual epistemic robustness. |
+| Mistral/Ollama v3 corpus integration (6,591 claims, topic/risk/sensitivity-tagged, partially LLM-poisoned already) | Sprint 4/5 | Planned, pending a team decision on loader-vs-attack framing. See `docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §7. |
 
 Note: the "Sprint" column above is this document's own dataset-specific roadmap numbering, established during Sprint 1 planning, and does not necessarily align 1:1 with the project's actual sprint cadence (e.g. the retrieval/generation/orchestration layer built in the project's own "Sprint 2" did not touch datasets at all). The `eiger.datasets` registry and `JSONFixtureDataset` described in Sections 6-7, `SnopesDataset` described in Section 8, `AVeriTecDataset` described in Section 3, `PolitiFactDataset` described in Section 4, and `FactCheckDataset` described in Section 5 were all implemented during the project's Sprint 3. All five datasets originally planned in this roadmap now have implemented loaders; multi-lingual extension (Sprint 5) is the only remaining planned item.
 

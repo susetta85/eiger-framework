@@ -40,7 +40,7 @@ from __future__ import annotations
 from typing import Any, TYPE_CHECKING
 
 from eiger.core.interfaces import BaseVectorStore
-from eiger.core.models import Document
+from eiger.core.models import Document, PoisonedDocument
 from eiger.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -50,6 +50,47 @@ if TYPE_CHECKING:
     from qdrant_client import QdrantClient as _QdrantClient
 
 log = get_logger(__name__)
+
+
+def _document_to_payload(doc: Document) -> dict[str, Any]:
+    """
+    Build the Qdrant payload dict for one document.
+
+    Bug fix (Sprint 4 audit): prior to this, only doc_id/claim_id/text/
+    doc_type were stored, so a PoisonedDocument's attack_name/attack_params/
+    original_text/annotation were silently discarded on every upsert. Since
+    DenseRetriever rebuilds a plain Document from this exact payload shape
+    (see retriever.py's ``_document_from_payload``), every retrieved
+    "poisoned" hit was reconstructed as a base Document with no annotation —
+    which made ``isinstance(doc, PoisonedDocument)`` (used by
+    ``eiger.metrics.ers.ERSMetric``) always False, and ERS silently reported
+    0.0 for every experiment run using the default dense retriever, with no
+    error or warning distinguishing that from "no poisoned documents were
+    retrieved". This function restores full round-trip fidelity: it is the
+    single source of truth for what a payload contains, and
+    ``_document_from_payload`` is its exact inverse.
+
+    Args:
+        doc: The Document (or PoisonedDocument) to serialize.
+
+    Returns:
+        A JSON-serializable dict. For a plain Document, exactly the four
+        base fields. For a PoisonedDocument, those four plus attack_name,
+        attack_params, original_text, and annotation (a plain dict, or None
+        if the document has not yet been annotated).
+    """
+    payload: dict[str, Any] = {
+        "doc_id": doc.doc_id,
+        "claim_id": doc.claim_id,
+        "text": doc.text,
+        "doc_type": doc.doc_type,
+    }
+    if isinstance(doc, PoisonedDocument):
+        payload["attack_name"] = doc.attack_name
+        payload["attack_params"] = doc.attack_params
+        payload["original_text"] = doc.original_text
+        payload["annotation"] = doc.annotation.model_dump() if doc.annotation is not None else None
+    return payload
 
 
 class QdrantVectorStore(BaseVectorStore):
@@ -184,9 +225,18 @@ class QdrantVectorStore(BaseVectorStore):
         Each document is stored as a Qdrant ``PointStruct`` with:
           - ``id``:      the list index (integer), making re-upserts idempotent.
           - ``vector``:  the pre-computed embedding from the embedder.
-          - ``payload``: a dict with doc_id, claim_id, text, and doc_type so
-                         that search results can be reconstructed into Document
-                         objects without a separate database lookup.
+          - ``payload``: a dict with doc_id, claim_id, text, doc_type, and —
+                         for PoisonedDocument instances — the full poisoning
+                         provenance (attack_name, attack_params, original_text,
+                         annotation), so search results can be reconstructed
+                         into the correct Document/PoisonedDocument type at
+                         retrieval time without a separate database lookup.
+                         See ``_document_to_payload()`` below for why this
+                         matters: omitting the provenance fields silently
+                         breaks any metric that relies on
+                         ``isinstance(doc, PoisonedDocument)`` or
+                         ``doc.annotation`` (e.g. ``eiger.metrics.ers.ERSMetric``)
+                         for every document retrieved through this store.
 
         Args:
             collection: Target collection name (must already exist).
@@ -203,17 +253,13 @@ class QdrantVectorStore(BaseVectorStore):
         client = self._get_client()
 
         # Build one PointStruct per document.  The payload stores all fields
-        # needed to reconstruct a Document at retrieval time.
+        # needed to reconstruct a Document (or PoisonedDocument) at retrieval
+        # time — see _document_to_payload().
         points = [
             PointStruct(
                 id=idx,
                 vector=vectors[idx],
-                payload={
-                    "doc_id":   doc.doc_id,
-                    "claim_id": doc.claim_id,
-                    "text":     doc.text,
-                    "doc_type": doc.doc_type,
-                },
+                payload=_document_to_payload(doc),
             )
             for idx, doc in enumerate(documents)
         ]

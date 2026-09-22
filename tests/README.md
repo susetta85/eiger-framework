@@ -28,7 +28,7 @@ pytest tests/ --cov=eiger --cov-report=term-missing
 
 | Suite       | Location            | Count | Speed  | External Services |
 |-------------|---------------------|-------|--------|--------------------|
-| Unit        | `tests/unit/`       | 434   | Fast   | None               |
+| Unit        | `tests/unit/`       | 485   | Fast   | None               |
 | Integration | `tests/integration/`| 3     | Fast–Slow | None required (see below) |
 
 Integration tests are split into two files with different infrastructure
@@ -119,7 +119,7 @@ or running service is required:
 | `test_retriever.py` | 32 | `DenseRetriever`: query encoding, search, score normalization, `RetrievalResult` assembly |
 | `test_pipeline.py` | 24 | `IngestionPipeline`: reset/encode/upsert orchestration, empty-corpus handling |
 | `test_ollama.py` | 38 | `OllamaLLM`: HTTP request/response handling, `build_rag_prompt()`, error paths |
-| `test_runner.py` | 34 | `ExperimentRunner`: full orchestration, attack/metric registry resolution, `faithfulness_scorer` hook, git/environment capture, result persistence |
+| `test_runner.py` | 39 | `ExperimentRunner`: full orchestration, attack/metric registry resolution, `faithfulness_scorer` hook, git/environment capture, result persistence, dense-vs-sparse retriever construction and the sparse-only run path (Sprint 4 — no vector store I/O, BM25 lexical ranking end-to-end) |
 | `test_heuristic_scorer.py` | 23 | `EmbeddingFaithfulnessScorer`: cosine-similarity proxy semantics, blank-input edge cases |
 
 All of the above follow a common convention: a module-level `log` object is
@@ -141,7 +141,7 @@ Sprint 3 added the dataset layer:
 | File | Tests | Covers |
 |---|---|---|
 | `test_datasets.py` | 30 | Dataset registry (`register_dataset`/`get_dataset`/`list_datasets`, `DatasetNotFoundError`) and `JSONFixtureDataset`: field mapping, `max_claims`/`split` handling, `download()` no-op, `content_hash` before/after load, error paths (missing file, invalid JSON, non-list top-level, missing required field), and the optional `source`/`domain`/`notes`/`verified` provenance passthrough |
-| `test_cli.py` | 22 | `eiger.__main__` (the `eiger` CLI): YAML config loading/validation, the component factory (`_build_dataset`/`_build_runner` — unsupported retriever/vector_store/llm backend values, correct component wiring), `run`/`list-datasets`/`list-attacks`/`list-metrics` subcommands, and `main()`'s dispatch + `EigerError`/`ImportError` → exit-code-1 handling |
+| `test_cli.py` | 23 | `eiger.__main__` (the `eiger` CLI): YAML config loading/validation, the component factory (`_build_dataset`/`_build_runner` — unsupported retriever/vector_store/llm backend values including "sparse" now being a supported retriever.type, correct component wiring), `run`/`list-datasets`/`list-attacks`/`list-metrics` subcommands, and `main()`'s dispatch + `EigerError`/`ImportError` → exit-code-1 handling |
 | `test_snopes.py` | 9 | `SnopesDataset`: identity/default path/registration, `source_dataset` correctly reporting `"snopes"` (the one behavior its `JSONFixtureDataset` parent couldn't provide unmodified), provenance passthrough, `download()` no-op |
 | `test_averitec.py` | 26 | `AVeriTecDataset` (implements `BaseDataset` directly — JSONL format, not JSON-array): `Supported`-label filtering, evidence-question-as-`context_query` (with templated fallback), claim_id stability under filtering, optional metadata passthrough (`claim_date`/`speaker`/`evidence_urls`), `split` file selection, `content_hash`, error paths (missing/invalid/non-object JSONL lines, missing `claim` field), and `download()`'s guard behavior (no-op if data present, `IngestionError` if not) |
 | `test_politifact.py` | 25 | `PolitiFactDataset` (implements `BaseDataset` directly — LIAR's headerless TSV format): `"true"`-label-only filtering (case-insensitive), templated `context_query` fallback (no evidence Q&A in LIAR), `.json`-suffix stripping from raw ids, defensive optional-metadata handling for short/blank rows (`subject`/`speaker`/`job_title`/`context`), `split` file selection, `content_hash`, error paths (missing file, rows with too few columns), and `download()`'s guard behavior |
@@ -155,6 +155,24 @@ Follows the same module-level `log`-patching convention described above
 `eiger.datasets.averitec.log`; for `test_politifact.py`,
 `eiger.datasets.politifact.log`; for `test_factcheck.py`,
 `eiger.datasets.factcheck.log`).
+
+---
+
+## Sprint 4 unit test files
+
+Sprint 4 added `SparseRetriever` (BM25), the retrieval layer's other planned
+strategy alongside `DenseRetriever` (see `eiger/retrieval/README.md` and
+`docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §9):
+
+| File | Tests | Covers |
+|---|---|---|
+| `test_sparse_retriever.py` | 30 | `SparseRetriever`: `fit()`/index construction (including the empty-corpus and missing-`rank-bm25` cases), lexical-overlap ranking, `top_k` limiting, per-query max-score normalization (including the all-zero-overlap and non-positive-max-score guards), `RetrievalResult` field passthrough, `RetrievalError` on BM25 scoring failure, and `_tokenize()`'s lowercase/punctuation-stripping behavior |
+
+Follows the same module-level `log`-patching convention (patches
+`eiger.retrieval.sparse_retriever.log`). `test_runner.py` and `test_cli.py`
+(Sprint 2/3 files, see above) were both extended in place — not added to
+this table — to cover `config.retriever.type == "sparse"` wiring; see their
+updated per-file test counts above.
 
 ---
 

@@ -91,6 +91,38 @@ class TestDeriveSeed:
         """derive_seed() must return a plain int suitable for seeding any RNG."""
         assert isinstance(derive_seed(42, "ctx"), int)
 
+    def test_colon_in_context_does_not_collide(self) -> None:
+        """
+        Regression test (Sprint 4 audit): a context piece containing a colon
+        must not collide with a differently-split context that serializes
+        to the same string under the old ":".join(...) scheme.
+
+        Before the length-prefixing fix, derive_seed(42, "ab:c") and
+        derive_seed(42, "ab", "c") both built the key "42:ab:c" and were
+        therefore indistinguishable — a real collision risk since claim_ids
+        are unvalidated user input (see json_fixture.py) and could contain
+        a colon. After the fix, length-prefixing each piece makes these two
+        calls produce different keys (and therefore different seeds).
+        """
+        s1 = derive_seed(42, "ab:c")
+        s2 = derive_seed(42, "ab", "c")
+        assert s1 != s2
+
+    def test_parent_seed_boundary_does_not_collide(self) -> None:
+        """
+        Regression test (Sprint 4 audit): the boundary between parent_seed
+        and the first context piece must also be unambiguous.
+
+        derive_seed(1, "23") and derive_seed(12, "3") must not collide: with
+        length-prefixing, "1" contributes "1:1" and "23" contributes "2:23"
+        (key "1:12:23"), while "12" contributes "2:12" and "3" contributes
+        "1:3" (key "2:121:3") — structurally different regardless of digit
+        content.
+        """
+        s1 = derive_seed(1, "23")
+        s2 = derive_seed(12, "3")
+        assert s1 != s2
+
 
 class TestSeedEverything:
     """Tests for seed_everything() — global RNG seeding for full reproducibility."""

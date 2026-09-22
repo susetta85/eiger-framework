@@ -84,7 +84,7 @@ after = random.random()
 assert before != after  # global state advanced only by its own calls, not by rng
 ```
 
-#### `derive_seed(parent_seed: int, *context: str) -> int`
+#### `derive_seed(parent_seed: int, *context: str | int) -> int`
 
 Produces a deterministic child seed by hashing the parent seed together with one or
 more context strings using SHA-256. The result is a non-negative integer suitable for

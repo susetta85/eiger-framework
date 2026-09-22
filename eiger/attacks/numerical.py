@@ -52,6 +52,11 @@ class NumericalShiftAttack(BaseAttack):
       whether that year makes contextual sense).
     - It does not modify non-numeric text.
     - It does not attempt to preserve the magnitude order of the number.
+    - It does not guarantee the document text actually changes: a document
+      with no numeric tokens (or only single-digit ones, which have no
+      swappable adjacent pair) produces byte-identical output. This is
+      recorded via ``attack_params["no_op"]`` (Sprint 4 audit fix) rather
+      than hidden.
 
     EIBench taxonomy: Type 1.
     """
@@ -111,6 +116,17 @@ class NumericalShiftAttack(BaseAttack):
             document.text,
         )
 
+        # Bug fix (Sprint 4 audit): a document with no numeric tokens at all
+        # (or only single-digit numbers, which have no swappable adjacent
+        # pair — see _swap_digits) produces poisoned_text == document.text:
+        # a "poisoned" document that is byte-identical to its ground truth,
+        # yet still tagged with a full attack_name/annotation as if a real
+        # perturbation had occurred. Recording this explicitly in
+        # attack_params lets downstream analysis (metrics, the results
+        # matrix, manual review) detect and exclude/flag these no-op rows
+        # rather than silently treating them as genuine poisoning.
+        no_op = poisoned_text == document.text
+
         # Pre-assessed risk scores for this attack type.
         # plausibility=4.0      : A transposed digit looks like a typo; a human
         #                         reading quickly is unlikely to notice.
@@ -130,7 +146,9 @@ class NumericalShiftAttack(BaseAttack):
             claim_id=document.claim_id,
             text=poisoned_text,
             attack_name=self.name,
-            attack_params=self.describe(),
+            # "no_op" records whether this call actually changed the text —
+            # see the Sprint 4 audit fix comment above.
+            attack_params=self.describe() | {"no_op": no_op},
             original_text=document.text,  # Preserved for diff-based evaluation
             annotation=annotation,
         )
@@ -144,6 +162,9 @@ class NumericalShiftAttack(BaseAttack):
 
         Returns:
             Dict with at minimum 'attack' (name string) and 'method' keys.
+            Callers of ``apply()`` additionally merge in a per-call 'no_op'
+            key (see ``apply()``); ``describe()`` itself has no per-call
+            information to report, so it never includes 'no_op'.
         """
         return {"attack": self.name, "method": "adjacent_digit_swap"}
 

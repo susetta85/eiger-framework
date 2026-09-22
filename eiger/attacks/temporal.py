@@ -72,6 +72,10 @@ class DateManipulationAttack(BaseAttack):
       a future-tense claim about the past).
     - It does not handle fiscal-year notation (e.g. "FY2024") because the
       word boundary in _YEAR_RE excludes the preceding "FY".
+    - It does not guarantee the document text actually changes: a document
+      with no 4-digit year token produces byte-identical output regardless
+      of the sampled shift. This is recorded via ``attack_params["no_op"]``
+      (Sprint 4 audit fix) rather than hidden.
 
     EIBench taxonomy: Type 2.
     """
@@ -152,6 +156,14 @@ class DateManipulationAttack(BaseAttack):
 
         poisoned_text = _YEAR_RE.sub(_shift_year, document.text)
 
+        # Bug fix (Sprint 4 audit): a document with no 4-digit year token at
+        # all produces poisoned_text == document.text regardless of the
+        # sampled shift — a "poisoned" document identical to its ground
+        # truth, still tagged with a full attack_name/annotation as if a
+        # real temporal displacement had occurred. Recording this explicitly
+        # lets downstream analysis detect/exclude these no-op rows.
+        no_op = poisoned_text == document.text
+
         # Pre-assessed risk scores for this attack type.
         # plausibility=4.5      : A one-to-five-year shift is easy to miss,
         #                         especially in long documents with many dates.
@@ -174,7 +186,7 @@ class DateManipulationAttack(BaseAttack):
             # so that every PoisonedDocument records exactly what transform was
             # applied. The | operator (dict merge, Python 3.9+) is used here
             # intentionally to keep describe() reusable without mutation.
-            attack_params=self.describe() | {"shift": delta, "direction": direction},
+            attack_params=self.describe() | {"shift": delta, "direction": direction, "no_op": no_op},
             original_text=document.text,
             annotation=annotation,
         )
@@ -188,7 +200,9 @@ class DateManipulationAttack(BaseAttack):
         updated between runs.
 
         Returns:
-            Dict with 'attack', 'method', and 'regex' keys.
+            Dict with 'attack', 'method', and 'regex' keys. Callers of
+            ``apply()`` additionally merge in per-call 'shift', 'direction',
+            and 'no_op' keys (see ``apply()``).
         """
         return {
             "attack": self.name,

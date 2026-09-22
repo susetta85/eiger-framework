@@ -61,8 +61,9 @@ def derive_seed(parent_seed: int, *context: str | int) -> int:
     Why hashing instead of simple arithmetic (e.g. parent + hash(context)):
       - Simple arithmetic can produce seed collisions for different inputs.
       - SHA-256 provides uniform distribution and collision resistance.
-      - The colon-separated key format ensures that ("ab", "c") and ("a", "bc")
-        produce different hashes, avoiding context concatenation ambiguities.
+      - Each piece is length-prefixed before concatenation (see below), which
+        guarantees that no two distinct (parent_seed, *context) inputs can
+        ever produce the same key string.
 
     Example:
         # Each (claim, attack) pair gets a unique, reproducible seed.
@@ -76,9 +77,22 @@ def derive_seed(parent_seed: int, *context: str | int) -> int:
     Returns:
         A 32-bit unsigned integer suitable for seeding any standard RNG.
     """
-    # Assemble a unique string key from the parent seed and all context pieces.
-    # Colon separators prevent "1:23" == "12:3" ambiguity.
-    key = f"{parent_seed}:" + ":".join(str(c) for c in context)
+    # Assemble a collision-free string key from the parent seed and all
+    # context pieces via length-prefixing (e.g. "3:foo" for the 3-character
+    # piece "foo"), rather than a fixed separator character.
+    #
+    # Bug fix (Sprint 4 audit): the previous scheme joined pieces with plain
+    # ":" separators (e.g. f"{parent_seed}:" + ":".join(...)), which is
+    # AMBIGUOUS whenever a context piece itself contains a colon: context
+    # pieces ("ab:c",) and ("ab", "c") both serialize to the identical key
+    # "42:ab:c" for parent_seed=42, so they'd collide to the same derived
+    # seed despite being logically different (document_id, attack_name)
+    # pairs. claim_ids are unvalidated user input (see json_fixture.py) and
+    # could plausibly contain a colon. Length-prefixing each piece makes the
+    # boundary between pieces unambiguous regardless of what characters the
+    # pieces themselves contain, closing this collision.
+    pieces = [str(parent_seed), *(str(c) for c in context)]
+    key = "".join(f"{len(piece)}:{piece}" for piece in pieces)
     digest = hashlib.sha256(key.encode()).digest()
     # Use first 4 bytes as a 32-bit unsigned integer seed.
     # "big" byte order is conventional and consistent across platforms.

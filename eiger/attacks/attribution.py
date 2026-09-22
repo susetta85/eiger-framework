@@ -84,6 +84,10 @@ class AttributionSwitchAttack(BaseAttack):
     - The seed parameter is accepted for interface consistency and
       reproducibility tracking but does not affect this attack's output,
       because the substitution is fully deterministic given the entity map.
+    - It does not guarantee the document text actually changes: if none of
+      the mapping's source keys appear in the text, the output is
+      byte-identical to the input. This is recorded via
+      ``attack_params["no_op"]`` (Sprint 4 audit fix) rather than hidden.
 
     EIBench taxonomy: Type 3.
     """
@@ -143,6 +147,19 @@ class AttributionSwitchAttack(BaseAttack):
             # up citing both the real and fake source.
             poisoned_text = poisoned_text.replace(source, replacement)
 
+        # Bug fix (Sprint 4 audit): unlike numerical_shift/date_manipulation,
+        # this attack has no randomness to retry with — if the document's
+        # text contains none of the mapping's source keys (default or
+        # custom), poisoned_text is unavoidably identical to document.text.
+        # There is no safe generic fallback here (unlike causal_manipulation's
+        # whole-document append): inventing a fabricated attribution phrase
+        # when no real source is even mentioned would be a materially
+        # different, more invasive attack design requiring its own review,
+        # not a bug fix. Recording the no-op explicitly is the conservative
+        # fix: it makes a silently-unmodified "poisoned" document detectable
+        # by downstream analysis instead of hiding it.
+        no_op = poisoned_text == document.text
+
         # Pre-assessed risk scores for this attack type.
         # plausibility=3.5      : Context may reveal a mismatch (e.g. if
         #                         surrounding text discusses WHO guidelines,
@@ -162,7 +179,9 @@ class AttributionSwitchAttack(BaseAttack):
             claim_id=document.claim_id,
             text=poisoned_text,
             attack_name=self.name,
-            attack_params=self.describe(),
+            # "no_op" records whether any source in `mapping` was actually
+            # found and replaced — see the Sprint 4 audit fix comment above.
+            attack_params=self.describe() | {"no_op": no_op},
             original_text=document.text,  # Preserved for diff-based evaluation
             annotation=annotation,
         )
@@ -174,7 +193,8 @@ class AttributionSwitchAttack(BaseAttack):
         Returns:
             Dict with 'attack', 'method', and 'default_entity_count' keys.
             The entity count is included so experiment logs can flag if the
-            default map was modified between runs.
+            default map was modified between runs. Callers of ``apply()``
+            additionally merge in a per-call 'no_op' key (see ``apply()``).
         """
         return {
             "attack": self.name,

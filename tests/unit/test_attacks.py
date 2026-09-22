@@ -154,6 +154,43 @@ class TestNumericalShiftAttack:
         assert result.annotation is not None
         assert 1.0 <= result.annotation.plausibility <= 5.0
 
+    def test_no_op_false_when_text_has_swappable_numbers(self, base_doc: Document) -> None:
+        """attack_params['no_op'] must be False when a real swap occurred."""
+        result = NumericalShiftAttack().apply(base_doc, seed=SEED)
+        assert result.text != base_doc.text
+        assert result.attack_params["no_op"] is False
+
+    def test_no_op_true_when_no_numbers_present(self) -> None:
+        """
+        Regression test (Sprint 4 audit): a document with no numeric tokens
+        at all must be flagged via attack_params['no_op'] = True rather than
+        silently returned as an unmodified "poisoned" document.
+        """
+        doc = Document(
+            doc_id="no-numbers",
+            claim_id="TEST_CLAIM_NO_NUM",
+            text="The WHO reported stable inflation due to supply shocks.",
+            doc_type="ground_truth",
+        )
+        result = NumericalShiftAttack().apply(doc, seed=SEED)
+        assert result.text == doc.text
+        assert result.attack_params["no_op"] is True
+
+    def test_no_op_true_when_only_single_digit_numbers(self) -> None:
+        """
+        A document whose only numeric tokens are single digits (no
+        swappable adjacent digit pair) must also be flagged no_op=True.
+        """
+        doc = Document(
+            doc_id="single-digit",
+            claim_id="TEST_CLAIM_SINGLE_DIGIT",
+            text="The report scored a 5 out of 9 on the reliability index.",
+            doc_type="ground_truth",
+        )
+        result = NumericalShiftAttack().apply(doc, seed=SEED)
+        assert result.text == doc.text
+        assert result.attack_params["no_op"] is True
+
 
 # ─── AttributionSwitchAttack ──────────────────────────────────────────────────
 
@@ -203,6 +240,29 @@ class TestAttributionSwitchAttack:
         AttributionSwitchAttack().apply(base_doc, seed=SEED)
         after = random.random()
         assert before == after
+
+    def test_no_op_false_when_source_replaced(self, base_doc: Document) -> None:
+        """attack_params['no_op'] must be False when a source was replaced."""
+        result = AttributionSwitchAttack().apply(base_doc, seed=SEED)
+        assert result.text != base_doc.text
+        assert result.attack_params["no_op"] is False
+
+    def test_no_op_true_when_no_known_source_present(self) -> None:
+        """
+        Regression test (Sprint 4 audit): a document mentioning none of the
+        default (or custom) entity map's source keys must be flagged via
+        attack_params['no_op'] = True rather than silently returned as an
+        unmodified "poisoned" document.
+        """
+        doc = Document(
+            doc_id="no-source",
+            claim_id="TEST_CLAIM_NO_SOURCE",
+            text="Inflation rose to 3.5% in 2023 due to supply shocks.",
+            doc_type="ground_truth",
+        )
+        result = AttributionSwitchAttack().apply(doc, seed=SEED)
+        assert result.text == doc.text
+        assert result.attack_params["no_op"] is True
 
 
 # ─── DateManipulationAttack ───────────────────────────────────────────────────
@@ -257,6 +317,28 @@ class TestDateManipulationAttack:
         """direction='random' must shift years in either direction without error."""
         result = DateManipulationAttack().apply(base_doc, seed=SEED, direction="random")
         assert isinstance(result.text, str)
+
+    def test_no_op_false_when_year_present(self, base_doc: Document) -> None:
+        """attack_params['no_op'] must be False when a year token was shifted."""
+        result = DateManipulationAttack().apply(base_doc, seed=SEED)
+        assert result.text != base_doc.text
+        assert result.attack_params["no_op"] is False
+
+    def test_no_op_true_when_no_year_present(self) -> None:
+        """
+        Regression test (Sprint 4 audit): a document with no 4-digit year
+        token must be flagged via attack_params['no_op'] = True rather than
+        silently returned as an unmodified "poisoned" document.
+        """
+        doc = Document(
+            doc_id="no-year",
+            claim_id="TEST_CLAIM_NO_YEAR",
+            text="The WHO reported that inflation rose to 3.5% due to supply shocks.",
+            doc_type="ground_truth",
+        )
+        result = DateManipulationAttack().apply(doc, seed=SEED)
+        assert result.text == doc.text
+        assert result.attack_params["no_op"] is True
 
 # ─── CausalManipulationAttack ─────────────────────────────────────────────────
 

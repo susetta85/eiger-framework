@@ -43,6 +43,16 @@ measurement.
 
 Annotation scores are on a 1-5 scale where 5 represents the highest risk.
 
+**`attack_params["no_op"]` (Sprint 4 audit fix).** `numerical_shift`, `date_manipulation`,
+and `attribution_switch` each have a degenerate case where the document has nothing
+eligible to modify (no digits, no year token, no known source name respectively) — in
+that case `apply()` still returns a `PoisonedDocument`, but its text is byte-identical
+to the input. Every `PoisonedDocument` from these three attacks now carries
+`attack_params["no_op"]` (`True`/`False`) so this is detectable rather than silent;
+filter on it before treating a "poisoned" record as genuine poisoning.
+`causal_manipulation` never no-ops (it falls back to appending a clause to the whole
+document when no eligible sentence is found), so it does not set this key.
+
 ---
 
 ## Usage

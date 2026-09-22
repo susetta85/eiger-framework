@@ -194,6 +194,72 @@ class TestExperimentConfig:
         )
         assert cfg1.config_hash != cfg2.config_hash
 
+    def test_config_hash_independent_of_free_form_dict_key_order(self) -> None:
+        """
+        Regression test (Sprint 4 audit): two configs whose only difference
+        is the insertion order of a free-form dict[str, Any] field (here,
+        AttackConfig.params) must hash identically, since they represent
+        the exact same configuration.
+
+        Before the fix, config_hash used model_dump_json() directly, which
+        is only canonical for a model's own declared fields (fixed
+        definition order) — NOT for the *contents* of a dict[str, Any]
+        field, where Python preserves insertion order. Two semantically
+        identical AttackConfig.params dicts built in different key order
+        therefore produced different config_hash values, defeating the
+        property's purpose of detecting identical configurations.
+        """
+        cfg1 = ExperimentConfig(
+            experiment_id="x",
+            dataset=DatasetConfig(name="json_fixture"),
+            attacks=[
+                AttackConfig(
+                    name="date_manipulation",
+                    poison_rate=0.1,
+                    params={"min_shift": 1, "max_shift": 5},
+                )
+            ],
+            retriever=RetrieverConfig(),
+            llm=LLMConfig(),
+        )
+        cfg2 = ExperimentConfig(
+            experiment_id="x",
+            dataset=DatasetConfig(name="json_fixture"),
+            attacks=[
+                AttackConfig(
+                    name="date_manipulation",
+                    poison_rate=0.1,
+                    params={"max_shift": 5, "min_shift": 1},
+                )
+            ],
+            retriever=RetrieverConfig(),
+            llm=LLMConfig(),
+        )
+        assert cfg1.config_hash == cfg2.config_hash
+
+    def test_config_hash_still_differs_on_real_param_change(self) -> None:
+        """
+        Sanity check alongside the canonicalization fix: config_hash must
+        still change when a param VALUE (not just key order) differs, so
+        the fix doesn't accidentally make the hash insensitive to real
+        configuration differences.
+        """
+        cfg1 = ExperimentConfig(
+            experiment_id="x",
+            dataset=DatasetConfig(name="json_fixture"),
+            attacks=[AttackConfig(name="date_manipulation", poison_rate=0.1, params={"max_shift": 5})],
+            retriever=RetrieverConfig(),
+            llm=LLMConfig(),
+        )
+        cfg2 = ExperimentConfig(
+            experiment_id="x",
+            dataset=DatasetConfig(name="json_fixture"),
+            attacks=[AttackConfig(name="date_manipulation", poison_rate=0.1, params={"max_shift": 10})],
+            retriever=RetrieverConfig(),
+            llm=LLMConfig(),
+        )
+        assert cfg1.config_hash != cfg2.config_hash
+
 
 class TestExperimentResult:
     """Tests for ExperimentResult and its to_json() serialization method."""

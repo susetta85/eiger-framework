@@ -353,9 +353,26 @@ class ExperimentConfig(BaseModel):
         Returns:
             A 16-character hexadecimal string (64-bit prefix of SHA-256).
         """
-        # model_dump_json produces canonical, deterministic JSON (keys sorted
-        # by field definition order in Pydantic v2), so the hash is stable.
-        serialized = self.model_dump_json(exclude={"experiment_id"})
+        # Bug fix (Sprint 4 audit): model_dump_json() alone is only
+        # canonical for fields whose *type* has a fixed key order (Pydantic
+        # models serialize their own declared fields in definition order).
+        # It is NOT canonical for free-form dict[str, Any] fields such as
+        # AttackConfig.params: Python dicts preserve insertion order, so two
+        # AttackConfig instances built with the same params in a different
+        # insertion order (e.g. {"min_shift": 1, "max_shift": 5} vs.
+        # {"max_shift": 5, "min_shift": 1}) — semantically identical
+        # configurations — previously produced two different
+        # model_dump_json() strings, and therefore two different
+        # config_hash values, defeating this property's whole purpose of
+        # detecting when two runs used the same configuration.
+        #
+        # Fix: dump to a plain Python structure first (model_dump(), not
+        # model_dump_json()), then serialize with json.dumps(sort_keys=True),
+        # which recursively sorts dict keys at every nesting level —
+        # including inside free-form dict[str, Any] fields — giving a truly
+        # canonical, insertion-order-independent representation.
+        payload = self.model_dump(exclude={"experiment_id"}, mode="json")
+        serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(serialized.encode()).hexdigest()[:16]
 
 

@@ -191,6 +191,18 @@ class TestNumericalShiftAttack:
         assert result.text == doc.text
         assert result.attack_params["no_op"] is True
 
+    def test_sensitivity_classification_propagates_to_poisoned_doc(self, base_doc: Document) -> None:
+        """
+        Regression test (docs/ETHICS_AND_THREAT_MODEL.md §7): a poisoned
+        variant of a classified document must carry the same classification
+        as its source, not silently drop it.
+        """
+        base_doc.sensitivity_class = "S1"
+        base_doc.risk_level = 3
+        result = NumericalShiftAttack().apply(base_doc, seed=SEED)
+        assert result.sensitivity_class == "S1"
+        assert result.risk_level == 3
+
 
 # ─── AttributionSwitchAttack ──────────────────────────────────────────────────
 
@@ -263,6 +275,18 @@ class TestAttributionSwitchAttack:
         result = AttributionSwitchAttack().apply(doc, seed=SEED)
         assert result.text == doc.text
         assert result.attack_params["no_op"] is True
+
+    def test_sensitivity_classification_propagates_to_poisoned_doc(self, base_doc: Document) -> None:
+        """
+        Regression test (docs/ETHICS_AND_THREAT_MODEL.md §7): a poisoned
+        variant of a classified document must carry the same classification
+        as its source, not silently drop it.
+        """
+        base_doc.sensitivity_class = "S1"
+        base_doc.risk_level = 3
+        result = AttributionSwitchAttack().apply(base_doc, seed=SEED)
+        assert result.sensitivity_class == "S1"
+        assert result.risk_level == 3
 
 
 # ─── DateManipulationAttack ───────────────────────────────────────────────────
@@ -340,6 +364,18 @@ class TestDateManipulationAttack:
         assert result.text == doc.text
         assert result.attack_params["no_op"] is True
 
+    def test_sensitivity_classification_propagates_to_poisoned_doc(self, base_doc: Document) -> None:
+        """
+        Regression test (docs/ETHICS_AND_THREAT_MODEL.md §7): a poisoned
+        variant of a classified document must carry the same classification
+        as its source, not silently drop it.
+        """
+        base_doc.sensitivity_class = "S1"
+        base_doc.risk_level = 3
+        result = DateManipulationAttack().apply(base_doc, seed=SEED)
+        assert result.sensitivity_class == "S1"
+        assert result.risk_level == 3
+
 # ─── CausalManipulationAttack ─────────────────────────────────────────────────
 
 class TestCausalManipulationAttack:
@@ -409,6 +445,18 @@ class TestCausalManipulationAttack:
             assert "3.5%" in result.text, (
                 f"seed={seed}: numeric fact '3.5%' was corrupted or split: {result.text!r}"
             )
+
+    def test_sensitivity_classification_propagates_to_poisoned_doc(self, base_doc: Document) -> None:
+        """
+        Regression test (docs/ETHICS_AND_THREAT_MODEL.md §7): a poisoned
+        variant of a classified document must carry the same classification
+        as its source, not silently drop it.
+        """
+        base_doc.sensitivity_class = "S1"
+        base_doc.risk_level = 3
+        result = CausalManipulationAttack().apply(base_doc, seed=SEED)
+        assert result.sensitivity_class == "S1"
+        assert result.risk_level == 3
 
 
 # ─── _split_sentences (decimal-point-aware sentence splitting) ────────────────

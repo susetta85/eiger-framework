@@ -258,6 +258,28 @@ class TestUpsert:
         for key in ("attack_name", "attack_params", "original_text", "annotation"):
             assert key not in payload
 
+    def test_payload_includes_sensitivity_classification(self) -> None:
+        """
+        Regression test: sensitivity_class/risk_level (added alongside
+        docs/ETHICS_AND_THREAT_MODEL.md) live on the base Document class, so
+        they must be included in every payload — ground-truth or poisoned —
+        not dropped the same way attack_name/etc. were before the original
+        Sprint 4 fix.
+        """
+        doc = Document(
+            doc_id="d1", claim_id="C1", text="text", doc_type="ground_truth",
+            sensitivity_class="S2", risk_level=4,
+        )
+        payload = _document_to_payload(doc)
+        assert payload["sensitivity_class"] == "S2"
+        assert payload["risk_level"] == 4
+
+    def test_payload_classification_defaults_to_none(self) -> None:
+        """An unclassified document's payload must carry None, not be omitted."""
+        payload = _document_to_payload(_make_doc())
+        assert payload["sensitivity_class"] is None
+        assert payload["risk_level"] is None
+
     def test_poisoned_payload_carries_full_provenance(self) -> None:
         """
         Regression test (Sprint 4 audit): a PoisonedDocument's payload must

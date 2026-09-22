@@ -274,6 +274,17 @@ class DenseRetriever(BaseRetriever):
             A PoisonedDocument if the payload carries poisoning provenance,
             otherwise a plain Document.
         """
+        # Follow-on bug fix (added alongside the Sprint 4 risk_level/
+        # sensitivity_class fields): both live on the base Document class,
+        # so they must be read back here for a plain Document too, not only
+        # PoisonedDocument — using .get() (not []) so a payload written by
+        # an older version of _document_to_payload (before these fields
+        # existed) still degrades gracefully to None ("unclassified"),
+        # exactly as an unclassified item should read, rather than raising
+        # a KeyError.
+        sensitivity_class = payload.get("sensitivity_class")
+        risk_level = payload.get("risk_level")
+
         if payload.get("doc_type") == "poisoned" and "attack_name" in payload:
             annotation_data = payload.get("annotation")
             return PoisonedDocument(
@@ -284,12 +295,16 @@ class DenseRetriever(BaseRetriever):
                 attack_params=payload.get("attack_params", {}),
                 original_text=payload.get("original_text", payload["text"]),
                 annotation=PoisonAnnotation(**annotation_data) if annotation_data else None,
+                sensitivity_class=sensitivity_class,
+                risk_level=risk_level,
             )
         return Document(
             doc_id=payload["doc_id"],
             claim_id=payload["claim_id"],
             text=payload["text"],
             doc_type=payload["doc_type"],
+            sensitivity_class=sensitivity_class,
+            risk_level=risk_level,
         )
 
     @staticmethod

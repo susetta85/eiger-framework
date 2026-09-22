@@ -31,8 +31,8 @@ no infrastructure dependencies.
 
 | Model | Key fields | Purpose |
 |---|---|---|
-| `Claim` | `claim_id`, `original_fact`, `context_query`, `source_dataset`, `metadata` | Single fact-checked claim; the fundamental unit of data. Every downstream document originates from a `Claim`. Exposes `content_hash` (SHA-256 of the fact text) for dataset versioning. |
-| `Document` | `doc_id`, `claim_id`, `text`, `doc_type`, `metadata` | A document in the vector corpus. `doc_type` is `"ground_truth"` or `"poisoned"`. |
+| `Claim` | `claim_id`, `original_fact`, `context_query`, `source_dataset`, `sensitivity_class`, `risk_level`, `metadata` | Single fact-checked claim; the fundamental unit of data. Every downstream document originates from a `Claim`. Exposes `content_hash` (SHA-256 of the fact text) for dataset versioning. `sensitivity_class` (`"S0"`-`"S3"`) and `risk_level` (`1`-`5`) are validated ethics/threat-model fields (see `docs/ETHICS_AND_THREAT_MODEL.md` §5/§7); both default to `None` ("unclassified", never "safe") since no dataset loader populates them yet. |
+| `Document` | `doc_id`, `claim_id`, `text`, `doc_type`, `sensitivity_class`, `risk_level`, `metadata` | A document in the vector corpus. `doc_type` is `"ground_truth"` or `"poisoned"`. `sensitivity_class`/`risk_level` are propagated from the source `Claim` by `CorpusBuilder`, and from the source `Document` to its poisoned variant by every built-in attack. |
 | `PoisonedDocument` | inherits `Document`; adds `attack_name`, `attack_params`, `original_text`, `annotation` | A document adversarially modified by an attack. Carries full poisoning provenance including the unmodified original text. |
 | `PoisonAnnotation` | `plausibility`, `verification_difficulty`, `editorial_risk` | Epistemic risk annotation for a poisoned document. All three fields are floats in [1, 5]. Higher values mean higher risk. |
 

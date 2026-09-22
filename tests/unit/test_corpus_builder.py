@@ -181,6 +181,38 @@ class TestCorpusBuilder:
         for doc in result.ground_truth_docs:
             assert doc.doc_type == "ground_truth"
 
+    def test_sensitivity_classification_propagates_to_ground_truth_doc(self) -> None:
+        """
+        Regression test (docs/ETHICS_AND_THREAT_MODEL.md §7): a claim's
+        sensitivity_class/risk_level must be propagated onto its ground-truth
+        Document, not silently dropped.
+        """
+        claim = Claim(
+            claim_id="C1",
+            original_fact="fact",
+            context_query="q",
+            sensitivity_class="S2",
+            risk_level=4,
+        )
+        builder = CorpusBuilder(attacks=[], seed=42)
+        result = builder.build([claim])
+        assert result.ground_truth_docs[0].sensitivity_class == "S2"
+        assert result.ground_truth_docs[0].risk_level == 4
+
+    def test_unclassified_claim_produces_unclassified_ground_truth_doc(
+        self, two_claims: list[Claim]
+    ) -> None:
+        """
+        A claim with no classification (the default) must produce a
+        ground-truth document that is also unclassified (None), never
+        silently defaulted to "safe".
+        """
+        builder = CorpusBuilder(attacks=[], seed=42)
+        result = builder.build(two_claims)
+        for doc in result.ground_truth_docs:
+            assert doc.sensitivity_class is None
+            assert doc.risk_level is None
+
     def test_poisoned_doc_type_is_poisoned(self, two_claims: list[Claim]) -> None:
         """Poisoned documents must have doc_type == 'poisoned'."""
         attack = NumericalShiftAttack()

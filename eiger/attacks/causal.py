@@ -252,6 +252,12 @@ class CausalManipulationAttack(BaseAttack):
             attack_params=self.describe() | {"inject_count": inject_count},
             original_text=document.text,
             annotation=annotation,
+            # Propagate the source document's ethics/threat-model
+            # classification (docs/ETHICS_AND_THREAT_MODEL.md §5/§7) — a
+            # poisoned variant of a classified document is not automatically
+            # less sensitive than its source.
+            sensitivity_class=document.sensitivity_class,
+            risk_level=document.risk_level,
         )
 
     def describe(self) -> dict[str, Any]:

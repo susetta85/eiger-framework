@@ -74,16 +74,26 @@ def _document_to_payload(doc: Document) -> dict[str, Any]:
         doc: The Document (or PoisonedDocument) to serialize.
 
     Returns:
-        A JSON-serializable dict. For a plain Document, exactly the four
-        base fields. For a PoisonedDocument, those four plus attack_name,
-        attack_params, original_text, and annotation (a plain dict, or None
-        if the document has not yet been annotated).
+        A JSON-serializable dict. For a plain Document, the base fields
+        (including sensitivity_class/risk_level — see below). For a
+        PoisonedDocument, those plus attack_name, attack_params,
+        original_text, and annotation (a plain dict, or None if the
+        document has not yet been annotated).
+
+    Follow-on bug fix (added alongside the Sprint 4 risk_level/sensitivity_class
+    fields): those two fields live on the base Document class (not just
+    PoisonedDocument), so they must be included in every payload, not only
+    poisoned ones — otherwise a ground-truth document's classification would
+    be silently dropped on the exact same round-trip that motivated this
+    function's original bug fix (see above).
     """
     payload: dict[str, Any] = {
         "doc_id": doc.doc_id,
         "claim_id": doc.claim_id,
         "text": doc.text,
         "doc_type": doc.doc_type,
+        "sensitivity_class": doc.sensitivity_class,
+        "risk_level": doc.risk_level,
     }
     if isinstance(doc, PoisonedDocument):
         payload["attack_name"] = doc.attack_name

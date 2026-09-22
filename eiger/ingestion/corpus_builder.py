@@ -67,6 +67,12 @@ class CorpusBuilder:
                 text=claim.original_fact,
                 doc_type="ground_truth",
                 metadata={"source_dataset": claim.source_dataset},
+                # Propagate the claim's ethics/threat-model classification
+                # (docs/ETHICS_AND_THREAT_MODEL.md §5/§7) onto its ground-truth
+                # document — an unclassified claim (None) stays unclassified,
+                # never silently promoted to "safe".
+                sensitivity_class=claim.sensitivity_class,
+                risk_level=claim.risk_level,
             )
             result.ground_truth_docs.append(gt_doc)
 

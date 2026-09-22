@@ -72,6 +72,44 @@ class TestClaim:
         c2 = Claim(claim_id="A", original_fact="fact two", context_query="q")
         assert c1.content_hash != c2.content_hash
 
+    def test_sensitivity_class_and_risk_level_default_to_none(self) -> None:
+        """
+        Regression test (docs/ETHICS_AND_THREAT_MODEL.md §7): an unclassified
+        claim must default to None on both fields, never a guessed "safe"
+        value like "S0" or risk_level=1.
+        """
+        claim = Claim(claim_id="C1", original_fact="fact", context_query="q")
+        assert claim.sensitivity_class is None
+        assert claim.risk_level is None
+
+    def test_valid_sensitivity_class_accepted(self) -> None:
+        """Each of the four defined sensitivity classes must be accepted."""
+        for cls in ("S0", "S1", "S2", "S3"):
+            claim = Claim(
+                claim_id="C1", original_fact="fact", context_query="q", sensitivity_class=cls,
+            )
+            assert claim.sensitivity_class == cls
+
+    def test_invalid_sensitivity_class_raises(self) -> None:
+        """A sensitivity_class outside {S0,S1,S2,S3} must raise ValidationError."""
+        with pytest.raises(ValidationError):
+            Claim(claim_id="C1", original_fact="fact", context_query="q", sensitivity_class="S4")
+
+    def test_risk_level_out_of_range_raises(self) -> None:
+        """risk_level outside [1, 5] must raise ValidationError."""
+        with pytest.raises(ValidationError):
+            Claim(claim_id="C1", original_fact="fact", context_query="q", risk_level=0)
+        with pytest.raises(ValidationError):
+            Claim(claim_id="C1", original_fact="fact", context_query="q", risk_level=6)
+
+    def test_risk_level_in_range_accepted(self) -> None:
+        """Every integer risk_level in [1, 5] must be accepted."""
+        for level in (1, 2, 3, 4, 5):
+            claim = Claim(
+                claim_id="C1", original_fact="fact", context_query="q", risk_level=level,
+            )
+            assert claim.risk_level == level
+
 
 class TestDocument:
     """Tests for the Document domain model."""
@@ -89,6 +127,26 @@ class TestDocument:
         """doc_type must default to 'ground_truth' when not specified."""
         doc = Document(claim_id="C1", text="text")
         assert doc.doc_type == "ground_truth"
+
+    def test_sensitivity_class_and_risk_level_default_to_none(self) -> None:
+        """
+        Regression test (docs/ETHICS_AND_THREAT_MODEL.md §7): an unclassified
+        document must default to None on both fields, never a guessed "safe"
+        value.
+        """
+        doc = Document(claim_id="C1", text="text")
+        assert doc.sensitivity_class is None
+        assert doc.risk_level is None
+
+    def test_invalid_sensitivity_class_raises(self) -> None:
+        """A sensitivity_class outside {S0,S1,S2,S3} must raise ValidationError."""
+        with pytest.raises(ValidationError):
+            Document(claim_id="C1", text="text", sensitivity_class="S9")
+
+    def test_risk_level_out_of_range_raises(self) -> None:
+        """risk_level outside [1, 5] must raise ValidationError."""
+        with pytest.raises(ValidationError):
+            Document(claim_id="C1", text="text", risk_level=0)
 
 
 class TestPoisonAnnotation:

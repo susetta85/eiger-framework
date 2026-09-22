@@ -365,6 +365,48 @@ class TestPoisonedDocumentReconstruction:
         assert not isinstance(result.hits[0].document, PoisonedDocument)
         assert result.hits[0].document.doc_type == "poisoned"
 
+    def test_ground_truth_hit_restores_sensitivity_classification(self) -> None:
+        """
+        Follow-on regression test (added alongside the Sprint 4 risk_level/
+        sensitivity_class fields): these two fields live on the base Document
+        class, so a plain (ground_truth) hit must restore them too, not only
+        PoisonedDocument hits.
+        """
+        raw_hits = [_make_raw_hit("doc-1", 0.9)]
+        raw_hits[0]["payload"]["sensitivity_class"] = "S2"
+        raw_hits[0]["payload"]["risk_level"] = 4
+        retriever, _, _ = _make_retriever(search_results=raw_hits)
+        result = retriever.retrieve("query", claim_id="C1", top_k=5)
+        doc = result.hits[0].document
+        assert doc.sensitivity_class == "S2"
+        assert doc.risk_level == 4
+
+    def test_poisoned_hit_restores_sensitivity_classification(self) -> None:
+        raw_hits = [_make_poisoned_raw_hit("doc-1", 0.9)]
+        raw_hits[0]["payload"]["sensitivity_class"] = "S1"
+        raw_hits[0]["payload"]["risk_level"] = 3
+        retriever, _, _ = _make_retriever(search_results=raw_hits)
+        result = retriever.retrieve("query", claim_id="C1", top_k=5)
+        doc = result.hits[0].document
+        assert isinstance(doc, PoisonedDocument)
+        assert doc.sensitivity_class == "S1"
+        assert doc.risk_level == 3
+
+    def test_legacy_payload_missing_classification_keys_degrades_to_none(self) -> None:
+        """
+        A payload written before sensitivity_class/risk_level existed (or
+        any payload where they were never set) must degrade to None
+        ("unclassified") rather than raise a KeyError — .get() not [].
+        """
+        raw_hits = [_make_raw_hit("doc-1", 0.9)]
+        assert "sensitivity_class" not in raw_hits[0]["payload"]
+        assert "risk_level" not in raw_hits[0]["payload"]
+        retriever, _, _ = _make_retriever(search_results=raw_hits)
+        result = retriever.retrieve("query", claim_id="C1", top_k=5)
+        doc = result.hits[0].document
+        assert doc.sensitivity_class is None
+        assert doc.risk_level is None
+
 
 # ─── Score normalization ──────────────────────────────────────────────────────
 

@@ -26,10 +26,15 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, SerializeAsAny, model_validator
+
+# Sensitivity classes from docs/ETHICS_AND_THREAT_MODEL.md §5. Defined once
+# here so Claim and Document (and PoisonedDocument, which inherits Document)
+# share a single source of truth for the allowed values.
+SensitivityClass = Literal["S0", "S1", "S2", "S3"]
 
 
 # ─── Dataset layer ────────────────────────────────────────────────────────────
@@ -55,6 +60,29 @@ class Claim(BaseModel):
     context_query: str = Field(description="Query used to retrieve relevant documents")
     # Default "unknown" lets fixtures omit the field without breaking validation.
     source_dataset: str = Field(default="unknown", description="Origin dataset (e.g. averitec, politifact)")
+    # Ethics/threat-model classification (docs/ETHICS_AND_THREAT_MODEL.md §5/§7).
+    # Both default to None rather than a guessed "safe" value: an unclassified
+    # claim must be treated as "requires classification before use", never as
+    # implicitly S0/low-risk. Nothing in this codebase enforces that policy at
+    # the type level (Pydantic can't express "None means mandatory review");
+    # it is a convention that callers reading these fields must respect — see
+    # the ethics doc for the full rationale.
+    sensitivity_class: SensitivityClass | None = Field(
+        default=None,
+        description=(
+            "S0 (neutral) to S3 (excluded) per docs/ETHICS_AND_THREAT_MODEL.md §5. "
+            "None means not yet classified, not 'safe'."
+        ),
+    )
+    risk_level: int | None = Field(
+        default=None,
+        ge=1,
+        le=5,
+        description=(
+            "1 (ordinary review) to 5 (critical) per docs/ETHICS_AND_THREAT_MODEL.md §5. "
+            "None means not yet classified, not 'low risk'."
+        ),
+    )
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @property
@@ -101,6 +129,28 @@ class Document(BaseModel):
     doc_type: str = Field(
         default="ground_truth",
         description="One of: ground_truth, poisoned",
+    )
+    # Same fields and "None means unclassified, not safe" convention as
+    # Claim above (docs/ETHICS_AND_THREAT_MODEL.md §5/§7). CorpusBuilder
+    # propagates these from the source Claim onto the ground-truth Document;
+    # each attack's apply() propagates them from the input Document onto the
+    # PoisonedDocument it returns (a poisoned variant of a classified
+    # document is not automatically less sensitive than its source).
+    sensitivity_class: SensitivityClass | None = Field(
+        default=None,
+        description=(
+            "S0 (neutral) to S3 (excluded) per docs/ETHICS_AND_THREAT_MODEL.md §5. "
+            "None means not yet classified, not 'safe'."
+        ),
+    )
+    risk_level: int | None = Field(
+        default=None,
+        ge=1,
+        le=5,
+        description=(
+            "1 (ordinary review) to 5 (critical) per docs/ETHICS_AND_THREAT_MODEL.md §5. "
+            "None means not yet classified, not 'low risk'."
+        ),
     )
     metadata: dict[str, Any] = Field(default_factory=dict)
 

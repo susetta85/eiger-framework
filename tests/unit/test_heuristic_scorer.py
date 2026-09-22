@@ -13,9 +13,10 @@ Tests verify:
   - a blank answer short-circuits both scores to 0.0 without calling encode()
   - empty context_docs short-circuits faithfulness to 0.0 (but not correctness)
   - a blank claim.original_fact short-circuits correctness to 0.0 (but not faithfulness)
-  - _raw_cosine returns 0.0 for a zero vector instead of raising ZeroDivisionError
-  - _raw_cosine raises on mismatched vector lengths (zip(strict=True)) rather
-    than silently truncating
+
+The underlying cosine-similarity math (raw_cosine / embed_cosine_similarity_01)
+was factored out into eiger.utils.similarity (shared with eiger.metrics.pcs)
+and is covered by tests/unit/test_similarity.py, not here.
 
 What these tests do NOT cover:
   - A real sentence-transformers model (the embedder is mocked throughout;
@@ -174,23 +175,3 @@ class TestCallBlankInputs:
         result = scorer(claim, _make_generation())
         assert result["ragas_answer_correctness"] == 0.0
         assert result["ragas_faithfulness"] == pytest.approx(1.0)
-
-
-# ─── _raw_cosine ────────────────────────────────────────────────────────────────
-
-class TestRawCosine:
-    """Tests for the static cosine-similarity helper."""
-
-    def test_zero_vector_returns_zero_not_raising(self) -> None:
-        assert EmbeddingFaithfulnessScorer._raw_cosine([0.0, 0.0], [1.0, 2.0]) == 0.0
-        assert EmbeddingFaithfulnessScorer._raw_cosine([1.0, 2.0], [0.0, 0.0]) == 0.0
-
-    def test_mismatched_lengths_raise(self) -> None:
-        with pytest.raises(ValueError):
-            EmbeddingFaithfulnessScorer._raw_cosine([1.0, 2.0], [1.0, 2.0, 3.0])
-
-    def test_known_value(self) -> None:
-        # [1, 0] . [1, 1] / (1 * sqrt(2)) = 1/sqrt(2) ~= 0.7071
-        assert EmbeddingFaithfulnessScorer._raw_cosine([1.0, 0.0], [1.0, 1.0]) == pytest.approx(
-            0.7071067811865476
-        )

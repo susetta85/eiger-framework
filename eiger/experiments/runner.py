@@ -27,6 +27,10 @@ Pipeline position
         ▼  for each claim:
         │     retriever.retrieve()  → RetrievalResult   (Dense-, Sparse-, or HybridRetriever)
         │     BaseLLM.build_rag_prompt() + generate() → GenerationResult
+        │     ["pcs" configured AND retrieval.contains_poisoned]:
+        │         a SECOND build_rag_prompt()+generate() call, with poisoned
+        │         hits filtered out of context_docs, stashed onto
+        │         generation.metadata["counterfactual_answer"] for PCSMetric
         │     [faithfulness_scorer(claim, generation)]  → optional RAGAS-style scores
         │   → EvaluationRecord
         │
@@ -83,6 +87,20 @@ Design decisions
   would silently be 0.0 for every record (faithfulness/correctness default
   to 0.0), which is NOT a valid experimental measurement and must not be
   reported as one.
+- **PCS's counterfactual generation lives in `_evaluate_claim`, not in a
+  metric or a hook**: unlike `faithfulness_scorer` (a pure scoring callable
+  with no LLM access), `PCSMetric` needs an actual second LLM generation —
+  same query, context with poisoned hits removed — which only
+  `ExperimentRunner` can trigger (`BaseMetric.compute()` runs later, in a
+  read-only pass over already-built records, with no access to `self.llm`).
+  So `_evaluate_claim` runs this second generation itself, but ONLY when
+  `"pcs"` is in `config.metrics` AND the retrieval actually contains a
+  poisoned hit (see `_add_counterfactual_generation`) — otherwise every
+  claim in every experiment would pay for an extra LLM call it never uses.
+  The result is stashed on `generation.metadata["counterfactual_answer"]`
+  (and `["counterfactual_context_docs"]`) rather than a new
+  `EvaluationRecord` field, so the schema is unchanged and `PCSMetric`
+  simply reads it back out of the record it's given.
 - **Retriever choice branches in two places, not via a factory**: ``__init__``
   picks ``DenseRetriever``, ``SparseRetriever``, or ``HybridRetriever`` (a
   composition of both — see ``eiger/retrieval/hybrid_retriever.py``) based on
@@ -125,16 +143,18 @@ from collections.abc import Callable
 from pathlib import Path
 
 from eiger.attacks import get_attack
-from eiger.core.interfaces import BaseEmbedder, BaseLLM, BaseVectorStore
+from eiger.core.interfaces import BaseEmbedder, BaseLLM, BaseMetric, BaseVectorStore
 from eiger.core.models import (
     Claim,
     EvaluationRecord,
     ExperimentConfig,
     ExperimentResult,
     GenerationResult,
+    RetrievalResult,
 )
 from eiger.ingestion import CorpusBuilder, CorpusBuilderResult, IngestionPipeline
 from eiger.metrics import get_metric
+from eiger.metrics.pcs import PCSMetric
 from eiger.retrieval import DenseRetriever, HybridRetriever, SparseRetriever
 from eiger.utils.logging import get_logger
 from eiger.utils.seeding import seed_everything
@@ -405,6 +425,9 @@ class ExperimentRunner:
             },
         )
 
+        if "pcs" in self.config.metrics and retrieval.contains_poisoned:
+            self._add_counterfactual_generation(claim, retrieval, generation)
+
         metrics: dict[str, float] = {}
         if self.faithfulness_scorer is not None:
             metrics.update(self.faithfulness_scorer(claim, generation))
@@ -415,6 +438,52 @@ class ExperimentRunner:
             retrieval=retrieval,
             metrics=metrics,
         )
+
+    def _add_counterfactual_generation(
+        self, claim: Claim, retrieval: RetrievalResult, generation: GenerationResult
+    ) -> None:
+        """
+        Run a second, counterfactual generation with poisoned context removed,
+        and stash it on ``generation.metadata`` for ``PCSMetric`` to read.
+
+        Only called from ``_evaluate_claim`` when "pcs" is configured AND the
+        retrieval actually contains at least one poisoned document — running
+        a second LLM call for every claim regardless of whether there is any
+        poisoned context to remove would be pure overhead for a metric that
+        specifically measures sensitivity *to poisoned context*.
+
+        Mutates ``generation.metadata`` in place (GenerationResult is not
+        frozen) rather than adding a new EvaluationRecord field, mirroring
+        how ``temperature``/``max_tokens`` are already stored there — this
+        keeps ``EvaluationRecord``'s schema unchanged and the counterfactual
+        answer travels with the generation it is a counterfactual *of*.
+
+        Args:
+            claim:      Source claim (for context_query — same query is reused).
+            retrieval:  The original RetrievalResult (already known to contain
+                        at least one poisoned hit).
+            generation: The real GenerationResult, mutated in place: adds
+                        "counterfactual_answer" (str) and
+                        "counterfactual_context_docs" (list[str], possibly
+                        empty if every retrieved hit was poisoned) keys to
+                        ``generation.metadata``.
+        """
+        clean_docs = [
+            hit.document.text for hit in retrieval.hits if hit.document.doc_type != "poisoned"
+        ]
+        # build_rag_prompt/generate handle an empty context_docs list without
+        # special-casing here — a fully-poisoned top-k is itself a valid
+        # experimental condition (PCSMetric can report it via the
+        # "counterfactual_context_docs" metadata rather than this method
+        # silently substituting or skipping it).
+        counterfactual_prompt = self.llm.build_rag_prompt(claim.context_query, clean_docs)
+        counterfactual_answer = self.llm.generate(
+            counterfactual_prompt,
+            temperature=self.config.llm.temperature,
+            max_tokens=self.config.llm.max_tokens,
+        )
+        generation.metadata["counterfactual_answer"] = counterfactual_answer
+        generation.metadata["counterfactual_context_docs"] = clean_docs
 
     # ─── Internal helpers — metrics ────────────────────────────────────────────
 
@@ -460,7 +529,7 @@ class ExperimentRunner:
         """
         aggregate_metrics: dict[str, float] = {}
         for metric_name in self.config.metrics:
-            metric = get_metric(metric_name)
+            metric = self._resolve_metric(metric_name)
             scores = metric.compute_batch(records)
             # Write each per-record score back into the record itself so the
             # serialized ExperimentResult is self-contained (no need to
@@ -469,6 +538,35 @@ class ExperimentRunner:
                 record.metrics[score.metric_name] = score.value
             aggregate_metrics[metric_name] = metric.aggregate(scores)
         return aggregate_metrics
+
+    def _resolve_metric(self, metric_name: str) -> BaseMetric:
+        """
+        Resolve a configured metric name to an instance, special-casing "pcs".
+
+        Every other metric is a zero-argument class in the registry (see
+        ``eiger.metrics.registry``'s own design note: ``get_metric`` always
+        instantiates with no arguments, by design, so metrics never carry
+        shared mutable state across runs). ``PCSMetric`` is the one
+        exception — it genuinely needs an embedder to compare the real and
+        counterfactual answers (see ``eiger/metrics/pcs.py``) — so
+        ``get_metric("pcs")`` would raise a ``TypeError`` if called directly.
+        ``ExperimentRunner`` already holds an ``embedder`` (shared with
+        ingestion/retrieval), so it constructs ``PCSMetric`` directly here
+        instead of going through the no-argument registry path.
+
+        Args:
+            metric_name: A name from ``config.metrics``.
+
+        Returns:
+            A ready-to-use ``BaseMetric`` instance.
+
+        Raises:
+            MetricNotFoundError: If ``metric_name`` is neither "pcs" nor a
+                                  name registered in ``eiger.metrics.registry``.
+        """
+        if metric_name == "pcs":
+            return PCSMetric(embedder=self.embedder)
+        return get_metric(metric_name)
 
     # ─── Internal helpers — reproducibility metadata ──────────────────────────
 

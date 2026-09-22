@@ -17,10 +17,26 @@ This package exposes the built-in metrics used by EIBench:
   - PRDMetric          — Poisoned Rank-1 Dominance: fraction of queries whose
                          single rank-1 retrieved document is a poisoned
                          document (added Sprint 4; see eiger.metrics.prd).
+  - PCSMetric          — Poisoned Context Sensitivity: embedding-space
+                         distance between the real answer and a counterfactual
+                         answer generated with poisoned context removed
+                         (added Sprint 5+; see eiger.metrics.pcs). Requires
+                         "pcs" to be in ExperimentConfig.metrics so
+                         ExperimentRunner actually runs the counterfactual
+                         generation each record needs.
 
-Importing this module is the only action required to activate the metrics: all
-five classes are automatically registered in the metric registry so they can
-be retrieved by name via ``get_metric("ffr")`` etc.
+Importing this module is the only action required to activate the metrics:
+all six classes are automatically registered in the metric registry so they
+can be retrieved by name via ``get_metric("ffr")`` etc — with one exception:
+``PCSMetric`` needs an ``embedder`` to construct (see its own docstring),
+which the registry's ``get_metric`` cannot supply (by design, it always
+instantiates with zero arguments — see ``eiger.metrics.registry``'s own
+design note). ``get_metric("pcs")`` therefore raises ``TypeError``;
+``ExperimentRunner`` resolves "pcs" specially instead (see
+``eiger/experiments/runner.py``'s ``_resolve_metric``), constructing
+``PCSMetric(embedder=self.embedder)`` directly. ``PCSMetric`` is still
+registered here so ``list_metrics()``/``eiger list-metrics`` lists it
+alongside the others.
 
 This package also exposes two ``faithfulness_scorer`` implementations for
 ``ExperimentRunner`` — neither is a ``BaseMetric``, and neither is
@@ -51,6 +67,7 @@ from eiger.metrics.ffr import FFRMetric
 
 # Faithfulness scorers (not BaseMetric — see module docstring above).
 from eiger.metrics.heuristic_scorer import EmbeddingFaithfulnessScorer
+from eiger.metrics.pcs import PCSMetric
 from eiger.metrics.prd import PRDMetric
 from eiger.metrics.prr import PRRMetric
 from eiger.metrics.ragas_scorer import RAGASFaithfulnessScorer
@@ -62,11 +79,15 @@ from eiger.metrics.source_integrity import SourceIntegrityMetric
 #   ``from eiger.metrics import ...``
 # can immediately call ``get_metric("ffr")`` without explicit registration.
 # This mirrors the pattern used by eiger.attacks.__init__.
+# PCSMetric is registered too (for list_metrics() visibility), but
+# get_metric("pcs") alone will raise TypeError — see module docstring above
+# and eiger/experiments/runner.py's _resolve_metric for why.
 register_metric(FFRMetric)
 register_metric(ERSMetric)
 register_metric(SourceIntegrityMetric)
 register_metric(PRRMetric)
 register_metric(PRDMetric)
+register_metric(PCSMetric)
 
 # ─── Explicit public surface ──────────────────────────────────────────────────
 # Only symbols listed here are considered stable public API.
@@ -79,6 +100,7 @@ __all__ = [
     "SourceIntegrityMetric",
     "PRRMetric",
     "PRDMetric",
+    "PCSMetric",
     "EmbeddingFaithfulnessScorer",
     "RAGASFaithfulnessScorer",
 ]

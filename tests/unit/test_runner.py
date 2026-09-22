@@ -157,6 +157,29 @@ def _make_search_hit(doc_id: str = "gt_C1", claim_id: str = "C1", text: str = "c
     }
 
 
+def _make_poisoned_search_hit(
+    doc_id: str = "poisoned_C1", claim_id: str = "C1", text: str = "poisoned ctx"
+) -> dict:
+    """
+    Build a raw search hit that DenseRetriever._document_from_payload will
+    reconstruct as a PoisonedDocument (doc_type="poisoned" AND "attack_name"
+    present — see that method's own docstring for why both are required).
+    """
+    return {
+        "doc_id": doc_id,
+        "score": 0.8,
+        "payload": {
+            "doc_id": doc_id,
+            "claim_id": claim_id,
+            "text": text,
+            "doc_type": "poisoned",
+            "attack_name": "numerical_shift",
+            "attack_params": {},
+            "original_text": "clean version",
+        },
+    }
+
+
 # ─── Initialisation ───────────────────────────────────────────────────────────
 
 class TestExperimentRunnerInit:
@@ -478,6 +501,113 @@ class TestRunMetrics:
         runner, _, _, _ = _make_runner(tmp_path, metrics=["ers"])
         result = runner.run([_make_claim()], save=False)
         assert result.aggregate_metrics["ers"] == 0.0
+
+
+# ─── run() — PCS counterfactual generation ─────────────────────────────────────
+
+class TestRunPCS:
+    """
+    Tests for _add_counterfactual_generation / _resolve_metric — the PCS
+    (Poisoned Context Sensitivity) support added alongside eiger/metrics/pcs.py.
+    """
+
+    def test_no_second_generation_when_pcs_not_configured(self, tmp_path: Path) -> None:
+        """Even with a poisoned hit retrieved, "pcs" must be opt-in."""
+        hit = _make_poisoned_search_hit()
+        runner, _, _, mock_llm = _make_runner(tmp_path, search_results=[hit], metrics=[])
+        runner.run([_make_claim()], save=False)
+        assert mock_llm.generate.call_count == 1
+
+    def test_no_second_generation_when_no_poisoned_hit(self, tmp_path: Path) -> None:
+        """With "pcs" configured but nothing poisoned retrieved, skip the extra call."""
+        hit = _make_search_hit()  # ground_truth only
+        runner, _, _, mock_llm = _make_runner(tmp_path, search_results=[hit], metrics=["pcs"])
+        runner.run([_make_claim()], save=False)
+        assert mock_llm.generate.call_count == 1
+
+    def test_second_generation_when_pcs_configured_and_poisoned_hit_present(
+        self, tmp_path: Path
+    ) -> None:
+        hit = _make_poisoned_search_hit()
+        runner, _, _, mock_llm = _make_runner(tmp_path, search_results=[hit], metrics=["pcs"])
+        runner.run([_make_claim()], save=False)
+        assert mock_llm.generate.call_count == 2
+
+    def test_counterfactual_prompt_excludes_poisoned_docs(self, tmp_path: Path) -> None:
+        clean_hit = _make_search_hit(doc_id="gt", text="clean text")
+        poisoned_hit = _make_poisoned_search_hit(doc_id="poison", text="poisoned text")
+        runner, _, _, mock_llm = _make_runner(
+            tmp_path, search_results=[clean_hit, poisoned_hit], metrics=["pcs"]
+        )
+        runner.run([_make_claim()], save=False)
+
+        # First call: real generation, both docs. Second: counterfactual,
+        # poisoned doc filtered out.
+        first_args, _ = mock_llm.build_rag_prompt.call_args_list[0]
+        second_args, _ = mock_llm.build_rag_prompt.call_args_list[1]
+        assert first_args[1] == ["clean text", "poisoned text"]
+        assert second_args[1] == ["clean text"]
+
+    def test_counterfactual_answer_stashed_on_generation_metadata(self, tmp_path: Path) -> None:
+        hit = _make_poisoned_search_hit()
+        runner, _, _, mock_llm = _make_runner(tmp_path, search_results=[hit], metrics=["pcs"])
+        mock_llm.generate.side_effect = ["real answer", "counterfactual answer"]
+        result = runner.run([_make_claim()], save=False)
+        generation = result.records[0].generation
+        assert generation.answer == "real answer"
+        assert generation.metadata["counterfactual_answer"] == "counterfactual answer"
+        assert generation.metadata["counterfactual_context_docs"] == []
+
+    def test_counterfactual_generation_uses_configured_temperature_and_max_tokens(
+        self, tmp_path: Path
+    ) -> None:
+        hit = _make_poisoned_search_hit()
+        runner, _, _, mock_llm = _make_runner(
+            tmp_path, search_results=[hit], metrics=["pcs"], temperature=0.3, max_tokens=77
+        )
+        runner.run([_make_claim()], save=False)
+        for call in mock_llm.generate.call_args_list:
+            assert call.kwargs["temperature"] == 0.3
+            assert call.kwargs["max_tokens"] == 77
+
+    def test_pcs_aggregate_metric_computed_end_to_end(self, tmp_path: Path) -> None:
+        hit = _make_poisoned_search_hit()
+        runner, _, _, mock_llm = _make_runner(tmp_path, search_results=[hit], metrics=["pcs"])
+        mock_llm.generate.side_effect = ["real answer", "totally different"]
+        result = runner.run([_make_claim()], save=False)
+        assert "pcs" in result.aggregate_metrics
+        assert "pcs" in result.records[0].metrics
+        # Real embedder is mocked to return the identical vector for every
+        # text (see _make_runner's mock_embedder.encode), so cosine
+        # similarity is ~1.0 regardless of text content -> PCS ~0.0.
+        # pytest.approx (not exact equality) because summing many identical
+        # floating-point terms in raw_cosine's dot/norm computation does not
+        # exactly cancel to 1.0 -- a few ULPs of error survive the (raw + 1)
+        # / 2 rescale and the 1 - similarity subtraction. This test only
+        # asserts the metric ran end-to-end, not a specific non-trivial
+        # value (that is covered precisely, with hand-picked vectors, in
+        # test_pcs.py).
+        assert result.aggregate_metrics["pcs"] == pytest.approx(0.0, abs=1e-9)
+
+    def test_resolve_metric_pcs_bypasses_registry(self, tmp_path: Path) -> None:
+        from eiger.metrics.pcs import PCSMetric
+
+        runner, mock_embedder, _, _ = _make_runner(tmp_path)
+        metric = runner._resolve_metric("pcs")
+        assert isinstance(metric, PCSMetric)
+        assert metric.embedder is mock_embedder
+
+    def test_resolve_metric_other_names_use_registry(self, tmp_path: Path) -> None:
+        from eiger.metrics import FFRMetric
+
+        runner, _, _, _ = _make_runner(tmp_path)
+        metric = runner._resolve_metric("ffr")
+        assert isinstance(metric, FFRMetric)
+
+    def test_resolve_metric_unknown_name_raises(self, tmp_path: Path) -> None:
+        runner, _, _, _ = _make_runner(tmp_path)
+        with pytest.raises(MetricNotFoundError):
+            runner._resolve_metric("does_not_exist")
 
 
 # ─── run() — result assembly & empty input ────────────────────────────────────

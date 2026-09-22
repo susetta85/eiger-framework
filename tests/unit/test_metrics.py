@@ -433,7 +433,7 @@ class TestMetricRegistry:
 
     def test_all_builtin_metrics_registered(self) -> None:
         """
-        All three built-in metrics must be discoverable by name.
+        All six built-in metrics must be discoverable by name.
 
         This test acts as a guard against accidental removal of a metric from
         the auto-registration block in eiger.metrics.__init__.
@@ -444,11 +444,24 @@ class TestMetricRegistry:
         assert "source_integrity" in registered
         assert "prr" in registered
         assert "prd" in registered
+        assert "pcs" in registered
 
     def test_get_metric_by_name(self) -> None:
         """get_metric('ffr') must return a live FFRMetric instance."""
         metric = get_metric("ffr")
         assert isinstance(metric, FFRMetric)
+
+    def test_get_metric_pcs_raises_type_error(self) -> None:
+        """
+        get_metric("pcs") raises TypeError (missing required 'embedder' arg) —
+        by design, not a bug. PCSMetric is the one registered metric that
+        cannot be constructed with zero arguments (see eiger/metrics/pcs.py
+        and eiger/metrics/__init__.py's module docstring); ExperimentRunner
+        resolves "pcs" specially via its own _resolve_metric instead of
+        going through get_metric (see tests/unit/test_runner.py).
+        """
+        with pytest.raises(TypeError):
+            get_metric("pcs")
 
     def test_get_unknown_metric_raises(self) -> None:
         """

@@ -61,6 +61,9 @@ CorpusBuilderResult
     ▼  for each claim:
     │     retriever.retrieve()  → RetrievalResult   (Dense- or SparseRetriever)
     │     BaseLLM.build_rag_prompt() + generate()   → GenerationResult
+    │     ["pcs" configured AND retrieval.contains_poisoned]:
+    │         second build_rag_prompt()+generate(), poisoned hits filtered
+    │         out of context_docs → generation.metadata["counterfactual_answer"]
     │     [faithfulness_scorer(claim, generation)]  → optional pre-metric scores
     │   → EvaluationRecord
     │
@@ -200,3 +203,7 @@ persistence, with 100% line coverage — using mocked `embedder`/
       `tests/integration/test_ragas_scorer_real.py` (skips gracefully if the
       `ragas` extra isn't installed, and further skips its live-scoring test
       if Ollama isn't reachable — see `eiger/metrics/ragas_scorer.py`).
+- [x] PCS (Poisoned Context Sensitivity) metric — `eiger/metrics/pcs.py`,
+      requiring the counterfactual-generation support described above
+      (`ExperimentRunner._add_counterfactual_generation`); opt-in via
+      `"pcs"` in `ExperimentConfig.metrics`.

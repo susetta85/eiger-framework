@@ -76,6 +76,11 @@ _EXPERIMENT_TO_RQ: dict[str, str] = {
     "baseline_v1": "Baseline / condizione di controllo (poison_rate=0.0) — riferimento per RQ1-RQ5, non risponde direttamente a nessuna RQ",
     "snopes_pilot": "Validazione dataset (SnopesDataset end-to-end) — non una RQ, pilot tecnico",
     "ablation_attacks": "RQ1 (vulnerabilita per tipo di manipolazione) / RQ2 (tasso di poisoning) — verificare contro la config esatta prima di pubblicare",
+    "poison_sweep_0pct": "RQ1/RQ2 (Poison-rate sweep, punto 0%) — baseline strutturale (attacks: []), riferimento per il resto dello sweep",
+    "poison_sweep_1pct": "RQ1/RQ2 (Poison-rate sweep, punto 1%)",
+    "poison_sweep_3pct": "RQ1/RQ2 (Poison-rate sweep, punto 3%)",
+    "poison_sweep_5pct": "RQ1/RQ2 (Poison-rate sweep, punto 5%, soglia di lavoro dichiarata in CLAIM_AND_RESEARCH_QUESTIONS.md Sezione 1)",
+    "poison_sweep_10pct": "RQ1/RQ2 (Poison-rate sweep, punto 10%)",
 }
 
 _HEADERS = [

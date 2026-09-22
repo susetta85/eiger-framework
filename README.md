@@ -207,7 +207,7 @@ make ollama-pull
 ```bash
 eiger list-datasets     # averitec, factcheck_org, json_fixture, politifact, snopes
 eiger list-attacks      # numerical_shift, attribution_switch, date_manipulation, causal_manipulation, cherry_picking, missing_context
-eiger list-metrics      # ers, ffr, prd, prr, source_integrity
+eiger list-metrics      # ers, ffr, pcs, prd, prr, source_integrity
 
 eiger run experiments/config.yaml
 ```
@@ -288,7 +288,7 @@ eiger-framework/
 │   ├── retrieval/            # Retrieval strategies (dense, sparse/BM25, hybrid/RRF — all implemented)
 │   ├── vector_stores/        # Vector store adapters (Qdrant implemented; FAISS/Chroma planned)
 │   ├── llm/                  # LLM backends (Ollama implemented; OpenAI-compatible planned)
-│   ├── metrics/              # Evaluation metrics (FFR, ERS, Source Integrity, PRR, PRD)
+│   ├── metrics/              # Evaluation metrics (FFR, ERS, Source Integrity, PRR, PRD, PCS)
 │   ├── experiments/          # Experiment runner and orchestrator
 │   ├── config/               # Pydantic Settings
 │   └── utils/                # Logging, seeding, hashing

@@ -64,11 +64,10 @@ Both keys populate exactly the fields FFRMetric reads.
 
 from __future__ import annotations
 
-import math
-
 from eiger.core.interfaces import BaseEmbedder
 from eiger.core.models import Claim, GenerationResult
 from eiger.utils.logging import get_logger
+from eiger.utils.similarity import embed_cosine_similarity_01
 
 log = get_logger(__name__)
 
@@ -132,12 +131,12 @@ class EmbeddingFaithfulnessScorer:
         answer = generation.answer
 
         faithfulness = (
-            self._cosine_similarity(answer, context_text)
+            embed_cosine_similarity_01(self.embedder, answer, context_text)
             if answer.strip() and context_text.strip()
             else 0.0
         )
         correctness = (
-            self._cosine_similarity(answer, claim.original_fact)
+            embed_cosine_similarity_01(self.embedder, answer, claim.original_fact)
             if answer.strip() and claim.original_fact.strip()
             else 0.0
         )
@@ -146,43 +145,3 @@ class EmbeddingFaithfulnessScorer:
             "ragas_faithfulness": faithfulness,
             "ragas_answer_correctness": correctness,
         }
-
-    # ─── Internal helpers ─────────────────────────────────────────────────────
-
-    def _cosine_similarity(self, text_a: str, text_b: str) -> float:
-        """
-        Embed two strings and return their cosine similarity, rescaled to [0, 1].
-
-        Args:
-            text_a: First string to compare.
-            text_b: Second string to compare.
-
-        Returns:
-            float in [0.0, 1.0]. 0.0 if either embedding is a zero vector
-            (degenerate case; avoids a ZeroDivisionError).
-        """
-        vec_a, vec_b = self.embedder.encode([text_a, text_b])
-        raw = self._raw_cosine(vec_a, vec_b)
-        # Rescale [-1, 1] -> [0, 1], the same convention DenseRetriever uses
-        # for vector-store similarity scores (see
-        # DenseRetriever._normalize_score).
-        return max(0.0, min(1.0, (raw + 1.0) / 2.0))
-
-    @staticmethod
-    def _raw_cosine(vec_a: list[float], vec_b: list[float]) -> float:
-        """
-        Compute the raw cosine similarity between two equal-length vectors.
-
-        Args:
-            vec_a: First embedding vector.
-            vec_b: Second embedding vector, same length as vec_a.
-
-        Returns:
-            float in [-1.0, 1.0], or 0.0 if either vector has zero norm.
-        """
-        dot = sum(a * b for a, b in zip(vec_a, vec_b, strict=True))
-        norm_a = math.sqrt(sum(a * a for a in vec_a))
-        norm_b = math.sqrt(sum(b * b for b in vec_b))
-        if norm_a == 0.0 or norm_b == 0.0:
-            return 0.0
-        return dot / (norm_a * norm_b)

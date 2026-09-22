@@ -1,0 +1,66 @@
+# EIBench Poison-Rate Sweep — point 1/5: poison_rate = 0.0 (true baseline)
+#
+# Reproduces the roadmap item "Poison-rate sweep experiment (0/1/3/5/10%)"
+# (docs/CLAIM_AND_RESEARCH_QUESTIONS.md, Section 6 table) — tests the
+# technical claim that "a small fraction of poisoned documents (working
+# hypothesis: under 5% of the corpus) is sufficient to alter retrieval and
+# generation" (Section 1). All 5 sweep configs share dataset, retriever,
+# LLM, and metrics; only `attacks` (poison_rate) differs, so any change in
+# aggregate_metrics across the sweep is attributable to poisoning rate
+# alone.
+#
+# `attacks: []` (not `poison_rate: 0.0` on each attack) for a literal,
+# structural zero-poison point — see CorpusBuilder's probability-based
+# poisoning check (an attack entry with poison_rate=0.0 would still be
+# structurally "configured", just emergently never fire).
+#
+# Dataset: `data/snopes/snopes_enriched.json` (2,928 real claims), NOT the
+# 1-claim `eibench_raw_claims.json` fixture — CorpusBuilder derives its
+# per-(claim, attack) RNG draw from `derive_seed(seed, claim_id,
+# attack.name)`, which is INDEPENDENT of poison_rate itself; with only 1
+# claim, whether that single deterministic draw passes the poison_rate
+# threshold is an all-or-nothing coin flip, not a gradient, so a 1-claim
+# sweep produced identical results at every rate (confirmed empirically:
+# first sweep run showed n_poisoned=0 at 1/3/5/10% alike). `max_claims:
+# 100` keeps runtime reasonable on local Ollama while giving enough
+# independent Bernoulli draws per attack for poison_rate to act as an
+# actual expected fraction (law of large numbers) — raise it for a less
+# noisy estimate once a first pass looks reasonable.
+#
+# Run with: make run CFG=experiments/poison_rate_sweep/sweep_0pct.yaml
+
+experiment_id: poison_sweep_0pct
+description: "Poison-rate sweep point 1/5: poison_rate=0.0 (true baseline, no attacks)"
+seed: 42
+
+dataset:
+  name: snopes
+  path: null       # uses SnopesDataset's default: data/snopes/snopes_enriched.json
+  split: test
+  max_claims: 100
+
+attacks: []
+
+retriever:
+  type: dense
+  embedder: sentence-transformers/all-MiniLM-L6-v2
+  vector_store: qdrant
+  top_k: 5
+  collection_name: eibench_poison_sweep_0pct
+
+llm:
+  backend: ollama
+  model: llama3.1:8b
+  temperature: 0.0
+  max_tokens: 512
+
+faithfulness_scorer: embedding  # proxy — see eiger/metrics/README.md; report as "FFR (embedding-similarity proxy)"
+
+metrics:
+  - ffr
+  - source_integrity
+  - ers
+  - prr
+  - prd
+
+output_dir: results/poison_rate_sweep/0pct/

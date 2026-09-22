@@ -144,6 +144,43 @@ class TestRetrievalResult:
         result = RetrievalResult(query="q", claim_id="C1", hits=[], top_k=5)
         assert result.poison_ratio == 0.0
 
+    def test_serialized_hit_preserves_poisoned_document_provenance(self) -> None:
+        """
+        Regression test: found while inspecting a real experiment's
+        results.json after the Sprint 4 ERS/Qdrant fix. RetrievedDocument.document
+        is declared as the base `Document` type (correct for validation — a
+        PoisonedDocument IS a Document), but Pydantic v2 by default serializes
+        a field according to its DECLARED type, not the runtime instance's
+        actual type. Before adding SerializeAsAny, a real PoisonedDocument
+        stored in this field was silently truncated to just Document's own
+        fields on every model_dump_json()/to_json() call — attack_name,
+        attack_params (including the no_op flag), original_text, and
+        annotation were all dropped from the persisted result, even though
+        ERSMetric computed correctly from the live (pre-serialization) object.
+        This defeated the entire purpose of results.json as a provenance
+        record: which retrieved document was poisoned, by which attack, was
+        unrecoverable from the file alone.
+        """
+        poisoned = PoisonedDocument(
+            doc_id="d1",
+            claim_id="C1",
+            text="poisoned text",
+            attack_name="numerical_shift",
+            attack_params={"attack": "numerical_shift", "no_op": False},
+            original_text="original text",
+        )
+        result = RetrievalResult(
+            query="q",
+            claim_id="C1",
+            hits=[RetrievedDocument(document=poisoned, score=0.9, rank=1)],
+            top_k=1,
+        )
+        dumped = json.loads(result.model_dump_json())
+        serialized_doc = dumped["hits"][0]["document"]
+        assert serialized_doc["attack_name"] == "numerical_shift"
+        assert serialized_doc["attack_params"] == {"attack": "numerical_shift", "no_op": False}
+        assert serialized_doc["original_text"] == "original text"
+
 
 class TestExperimentConfig:
     """Tests for ExperimentConfig and its config_hash property."""

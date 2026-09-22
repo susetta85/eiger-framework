@@ -29,7 +29,7 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, SerializeAsAny, model_validator
 
 
 # ─── Dataset layer ────────────────────────────────────────────────────────────
@@ -171,7 +171,25 @@ class RetrievedDocument(BaseModel):
     independently from the document content.
     """
 
-    document: Document
+    # Bug fix (found while inspecting a real experiment's results.json after
+    # the Sprint 4 ERS/Qdrant provenance fix): this field was declared as the
+    # base `Document` type, which is correct for VALIDATION (a PoisonedDocument
+    # is a valid Document), but Pydantic v2's default serialization behavior
+    # dumps a field according to its DECLARED type, not the runtime instance's
+    # actual type — so a real PoisonedDocument stored here was silently
+    # truncated down to just Document's fields (doc_id, claim_id, text,
+    # doc_type, metadata) on every model_dump_json()/to_json() call, dropping
+    # attack_name/attack_params/original_text/annotation (including the
+    # no_op flag added in this same audit) from every persisted results.json.
+    # This did NOT affect metric computation (ERSMetric etc. operate on the
+    # live Python objects before serialization, which is why ERS scores were
+    # already correct — see eiger/retrieval/retriever.py's provenance fix),
+    # but it silently broke reproducibility/provenance: the on-disk record of
+    # *which* retrieved document was poisoned, by which attack, with what
+    # parameters, was unrecoverable from results.json alone.
+    # SerializeAsAny tells Pydantic to serialize based on the actual runtime
+    # type instead of the declared annotation, restoring the subclass fields.
+    document: SerializeAsAny[Document]
     # Score is normalized to [0, 1]; raw cosine similarities from the
     # vector store are rescaled by the retriever implementation.
     score: float = Field(ge=0.0, le=1.0, description="Similarity score (higher = more similar)")

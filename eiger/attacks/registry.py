@@ -112,7 +112,7 @@ def list_attacks() -> list[str]:
 
     Returns:
         Sorted list of attack name strings, e.g.
-        ['attribution_switch', 'causal_manipulation', 'date_manipulation',
-         'numerical_shift'].
+        ['attribution_switch', 'causal_manipulation', 'cherry_picking',
+         'date_manipulation', 'missing_context', 'numerical_shift'].
     """
     return sorted(_REGISTRY.keys())

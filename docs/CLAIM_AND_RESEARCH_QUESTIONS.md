@@ -104,10 +104,10 @@ This is the project's canonical manipulation taxonomy (from the team's `03_Codeb
 | M02 | Temporal alteration | Historicized cases only; never current deadlines | `date_manipulation` (`DateManipulationAttack`) — ✅ implemented |
 | M03 | False attribution | Sanitized only; avoid imitating real official sources | `attribution_switch` (`AttributionSwitchAttack`) — ✅ implemented |
 | M04 | Causal inversion | Requires explicit corrective evidence | `causal_manipulation` (`CausalManipulationAttack`) — ✅ implemented |
-| M05 | Cherry-picking | Annotate the omitted period/baseline/context | ❌ **Not implemented** — no `eiger/attacks/` strategy selectively omits qualifying context today |
-| M06 | Missing context | Admissible only if the resulting distortion is measurable | ❌ **Not implemented** — same gap as M05 |
+| M05 | Cherry-picking | Annotate the omitted period/baseline/context | `cherry_picking` (`CherryPickingAttack`) — ✅ implemented (Sprint 5) |
+| M06 | Missing context | Admissible only if the resulting distortion is measurable | `missing_context` (`MissingContextAttack`) — ✅ implemented (Sprint 5) |
 
-**Sprint 4/5 candidate:** implement `CherryPickingAttack` (M05) and `MissingContextAttack` (M06) to complete the taxonomy 1:1. Both are a different shape of attack than the existing four (they remove/truncate information rather than substitute a value), so they may need a small `BaseAttack` contract extension (e.g. an attack that can shorten `document.text` rather than only rewrite it in place) — worth a short design note before implementation.
+**Sprint 5: taxonomy complete 1:1.** `CherryPickingAttack` (M05) deletes a comparative baseline/reference-period clause (e.g. "compared to 6.8% in 2020") while leaving the surviving statistic byte-for-byte intact; `MissingContextAttack` (M06) deletes an entire qualifying/caveat sentence (e.g. "However, this figure excludes housing costs.") while leaving every other sentence unchanged. No `BaseAttack` contract extension was needed in the end — `apply()`'s existing signature (`document, seed, **kwargs -> PoisonedDocument`) already permits returning text that is a strict subset of the input; the "different shape" concern flagged below turned out to be a non-issue once implementation started. Both attacks follow the same conservative no-fallback convention as `attribution_switch`: if nothing eligible is found to omit, `attack_params["no_op"]` is `True` rather than fabricating content to then delete. Both also record `attack_params["omitted_count"]`. See `eiger/attacks/README.md` for full usage examples.
 
 ---
 
@@ -169,7 +169,7 @@ Concrete, actionable deltas between the full research proposal and the current c
 | ~~Add `PRR@k`/`PRD@1` as registered `BaseMetric` implementations~~ | Existing `RetrievalResult` data | ~~4~~ **Done (Sprint 4)** — `eiger/metrics/prr.py`, `eiger/metrics/prd.py` |
 | ~~Add `risk_level`/`sensitivity_class` fields to `Claim`/`Document`~~ | Threat model doc (for defining the field's allowed values authoritatively) | ~~4~~ **Done (Sprint 4)** — typed/validated fields (not nested in free-form `metadata`), propagated from `Claim` to ground-truth `Document` and from source `Document` to `PoisonedDocument` in all 4 attacks, plus a follow-on fix to the Qdrant payload round-trip (`_document_to_payload`/`_document_from_payload`) so classification survives the default dense retriever; no dataset loader populates them yet, so every claim loaded today is still unclassified (`None`) — see `docs/ETHICS_AND_THREAT_MODEL.md` §7 |
 | Decide + implement ingestion path for the Mistral-generated corpus (Section 7) | Team decision on loader-vs-attack framing | 4/5 |
-| Implement `CherryPickingAttack` (M05) and `MissingContextAttack` (M06) | Possible `BaseAttack` contract extension | 4/5 |
+| ~~Implement `CherryPickingAttack` (M05) and `MissingContextAttack` (M06)~~ | Possible `BaseAttack` contract extension | ~~4/5~~ **Done (Sprint 5)** — no contract extension was actually needed; see §5 above and `eiger/attacks/README.md` |
 | ~~`SparseRetriever` (BM25)~~ | — | ~~4/5~~ **Done (Sprint 4)** — `eiger/retrieval/sparse_retriever.py`, selectable via `retriever.type: sparse` |
 | `HybridRetriever` (RRF fusion of dense + sparse) | `SparseRetriever` (done) + `DenseRetriever` (done) | 5 |
 | Real RAGAS-based faithfulness scorer (replace `EmbeddingFaithfulnessScorer`) | `ragas` dependency (currently in `future` extra) | 5 |

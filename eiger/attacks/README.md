@@ -40,18 +40,28 @@ measurement.
 | `date_manipulation` | `DateManipulationAttack` | 2 | Shifts 4-digit year references (1900-2099) by a configurable offset (default ±1-5 years). The document remains internally consistent; only the temporal grounding is displaced. | 4.5 | 4.0 | 4.0 |
 | `attribution_switch` | `AttributionSwitchAttack` | 3 | Replaces authoritative source names (WHO, NASA, The Lancet, CDC, IPCC) with lower-credibility alternatives. The factual claim is unchanged; only the attributed authority is degraded. | 3.5 | 4.0 | 3.0 |
 | `causal_manipulation` | `CausalManipulationAttack` | 4 | Appends a fabricated causal clause to one or more factual statements (e.g. "Inflation fell to 2.1% due to coordinated market manipulation"). The core statistic is preserved; the attributed cause is fabricated. | 3.0 | 4.5 | 3.5 |
+| `cherry_picking` | `CherryPickingAttack` | 5 | Deletes a comparative baseline/reference-period clause (e.g. "compared to 6.8% in 2020"), leaving the headline statistic intact but stripped of the context needed to interpret it. | 4.5 | 4.5 | 4.0 |
+| `missing_context` | `MissingContextAttack` | 6 | Deletes an entire qualifying/caveat sentence (e.g. "However, this figure excludes housing costs."), leaving every other sentence — including the core statistic — unchanged. | 4.5 | 5.0 | 4.0 |
 
 Annotation scores are on a 1-5 scale where 5 represents the highest risk.
 
 **`attack_params["no_op"]` (Sprint 4 audit fix).** `numerical_shift`, `date_manipulation`,
-and `attribution_switch` each have a degenerate case where the document has nothing
-eligible to modify (no digits, no year token, no known source name respectively) — in
-that case `apply()` still returns a `PoisonedDocument`, but its text is byte-identical
-to the input. Every `PoisonedDocument` from these three attacks now carries
+`attribution_switch`, `cherry_picking`, and `missing_context` each have a degenerate case
+where the document has nothing eligible to modify or omit (no digits, no year token, no
+known source name, no comparative baseline clause, or no recognized caveat sentence,
+respectively) — in that case `apply()` still returns a `PoisonedDocument`, but its text is
+byte-identical to the input. Every `PoisonedDocument` from these five attacks now carries
 `attack_params["no_op"]` (`True`/`False`) so this is detectable rather than silent;
 filter on it before treating a "poisoned" record as genuine poisoning.
 `causal_manipulation` never no-ops (it falls back to appending a clause to the whole
 document when no eligible sentence is found), so it does not set this key.
+
+**`cherry_picking`/`missing_context` are omission attacks, not substitution attacks.**
+Unlike the first four (which replace one value with another while preserving document
+structure), these two delete content: `cherry_picking` removes a narrow comparative clause
+embedded within an otherwise-intact sentence; `missing_context` removes an entire
+qualifying sentence. Both additionally record `attack_params["omitted_count"]` — how many
+clauses/sentences were actually deleted (0 when `no_op` is `True`).
 
 ---
 
@@ -120,6 +130,34 @@ attack = CausalManipulationAttack()
 poisoned = attack.apply(doc, seed=42, inject_count=2)
 ```
 
+### Cherry-picking (delete a comparative baseline clause)
+
+```python
+from eiger.attacks.cherry_picking import CherryPickingAttack
+
+doc = Document(claim_id="claim_001", text="Unemployment fell to 4.1%, compared to 6.8% in 2020.")
+attack = CherryPickingAttack()
+poisoned = attack.apply(doc, seed=42)
+
+print(poisoned.text)                          # "Unemployment fell to 4.1%."
+print(poisoned.attack_params["omitted_count"]) # 1
+```
+
+### Missing context (delete an entire caveat sentence)
+
+```python
+from eiger.attacks.missing_context import MissingContextAttack
+
+doc = Document(
+    claim_id="claim_001",
+    text="Inflation rose to 3.5% in 2023. However, this figure excludes housing costs entirely.",
+)
+attack = MissingContextAttack()
+poisoned = attack.apply(doc, seed=42)
+
+print(poisoned.text)  # "Inflation rose to 3.5% in 2023."
+```
+
 ---
 
 ## Registry
@@ -132,7 +170,8 @@ from eiger.attacks.registry import get_attack, list_attacks
 
 # List all registered attacks
 print(list_attacks())
-# ['attribution_switch', 'causal_manipulation', 'date_manipulation', 'numerical_shift']
+# ['attribution_switch', 'causal_manipulation', 'cherry_picking', 'date_manipulation',
+#  'missing_context', 'numerical_shift']
 
 # Instantiate an attack by name
 attack = get_attack("numerical_shift")
@@ -141,7 +180,8 @@ poisoned = attack.apply(doc, seed=42)
 # Unknown names raise AttackNotFoundError
 attack = get_attack("unknown_attack")
 # eiger.core.exceptions.AttackNotFoundError: Attack 'unknown_attack' not found.
-# Available: ['attribution_switch', 'causal_manipulation', 'date_manipulation', 'numerical_shift']
+# Available: ['attribution_switch', 'causal_manipulation', 'cherry_picking',
+#             'date_manipulation', 'missing_context', 'numerical_shift']
 ```
 
 Attack names in `ExperimentConfig.attacks[].name` are resolved through the

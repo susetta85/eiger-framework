@@ -29,6 +29,8 @@ from eiger.attacks.numerical import NumericalShiftAttack
 from eiger.attacks.attribution import AttributionSwitchAttack
 from eiger.attacks.temporal import DateManipulationAttack
 from eiger.attacks.causal import CausalManipulationAttack
+from eiger.attacks.cherry_picking import CherryPickingAttack
+from eiger.attacks.missing_context import MissingContextAttack
 
 # ─── Auto-registration ───────────────────────────────────────────────────────
 
@@ -42,6 +44,8 @@ register_attack(NumericalShiftAttack)
 register_attack(AttributionSwitchAttack)
 register_attack(DateManipulationAttack)
 register_attack(CausalManipulationAttack)
+register_attack(CherryPickingAttack)
+register_attack(MissingContextAttack)
 
 # ─── Public API declaration ───────────────────────────────────────────────────
 
@@ -57,4 +61,6 @@ __all__ = [
     "AttributionSwitchAttack",
     "DateManipulationAttack",
     "CausalManipulationAttack",
+    "CherryPickingAttack",
+    "MissingContextAttack",
 ]

@@ -31,6 +31,8 @@ from eiger.attacks import (
     AttributionSwitchAttack,
     DateManipulationAttack,
     CausalManipulationAttack,
+    CherryPickingAttack,
+    MissingContextAttack,
     get_attack,
     list_attacks,
 )
@@ -459,6 +461,153 @@ class TestCausalManipulationAttack:
         assert result.risk_level == 3
 
 
+# ─── CherryPickingAttack ───────────────────────────────────────────────────────
+
+class TestCherryPickingAttack:
+    """Tests for the CherryPickingAttack adversarial transformation."""
+
+    @pytest.fixture
+    def baseline_doc(self) -> Document:
+        """A document containing a comparative baseline clause to delete."""
+        return Document(
+            doc_id="cherry-001",
+            claim_id="TEST_CLAIM_002",
+            text="Unemployment fell to 4.1%, compared to 6.8% in 2020.",
+            doc_type="ground_truth",
+        )
+
+    def test_returns_poisoned_document(self, baseline_doc: Document) -> None:
+        result = CherryPickingAttack().apply(baseline_doc, seed=SEED)
+        assert isinstance(result, PoisonedDocument)
+
+    def test_baseline_clause_is_removed(self, baseline_doc: Document) -> None:
+        result = CherryPickingAttack().apply(baseline_doc, seed=SEED)
+        assert "compared to 6.8%" not in result.text
+
+    def test_headline_statistic_is_preserved(self, baseline_doc: Document) -> None:
+        """The surviving statistic must remain byte-for-byte intact."""
+        result = CherryPickingAttack().apply(baseline_doc, seed=SEED)
+        assert "4.1%" in result.text
+
+    def test_determinism(self, baseline_doc: Document) -> None:
+        r1 = CherryPickingAttack().apply(baseline_doc, seed=SEED)
+        r2 = CherryPickingAttack().apply(baseline_doc, seed=SEED)
+        assert r1.text == r2.text
+
+    def test_no_global_state_mutation(self, baseline_doc: Document) -> None:
+        random.seed(0)
+        before = random.random()
+        random.seed(0)
+        CherryPickingAttack().apply(baseline_doc, seed=SEED)
+        after = random.random()
+        assert before == after
+
+    def test_no_op_when_no_baseline_clause(self, base_doc: Document) -> None:
+        """
+        base_doc has no comparative/baseline marker at all, so the attack
+        must record no_op=True rather than fabricate one to delete.
+        """
+        result = CherryPickingAttack().apply(base_doc, seed=SEED)
+        assert result.text == base_doc.text
+        assert result.attack_params["no_op"] is True
+        assert result.attack_params["omitted_count"] == 0
+
+    def test_omitted_count_recorded_when_clause_removed(self, baseline_doc: Document) -> None:
+        result = CherryPickingAttack().apply(baseline_doc, seed=SEED)
+        assert result.attack_params["no_op"] is False
+        assert result.attack_params["omitted_count"] == 1
+
+    def test_decimal_value_inside_clause_not_corrupted(self) -> None:
+        """
+        Regression test mirroring causal.py's decimal-point fix: the baseline
+        clause tail must not treat the "." in "6.8%" as the clause-ending
+        punctuation, which would truncate the match mid-number and leave a
+        corrupted fragment (e.g. ".8% in 2020.") behind in the poisoned text.
+        """
+        doc = Document(
+            doc_id="cherry-002", claim_id="TEST_CLAIM_002",
+            text="Unemployment fell to 4.1%, compared to 6.8% in 2020.",
+            doc_type="ground_truth",
+        )
+        result = CherryPickingAttack().apply(doc, seed=SEED)
+        assert result.text == "Unemployment fell to 4.1%."
+        assert ".8%" not in result.text
+
+    def test_sensitivity_classification_propagates_to_poisoned_doc(self, baseline_doc: Document) -> None:
+        baseline_doc.sensitivity_class = "S1"
+        baseline_doc.risk_level = 3
+        result = CherryPickingAttack().apply(baseline_doc, seed=SEED)
+        assert result.sensitivity_class == "S1"
+        assert result.risk_level == 3
+
+
+# ─── MissingContextAttack ──────────────────────────────────────────────────────
+
+class TestMissingContextAttack:
+    """Tests for the MissingContextAttack adversarial transformation."""
+
+    @pytest.fixture
+    def context_doc(self) -> Document:
+        """A document containing a caveat sentence to delete."""
+        return Document(
+            doc_id="context-001",
+            claim_id="TEST_CLAIM_003",
+            text=(
+                "Inflation rose to 3.5% in 2023. "
+                "However, this figure excludes housing costs entirely."
+            ),
+            doc_type="ground_truth",
+        )
+
+    def test_returns_poisoned_document(self, context_doc: Document) -> None:
+        result = MissingContextAttack().apply(context_doc, seed=SEED)
+        assert isinstance(result, PoisonedDocument)
+
+    def test_caveat_sentence_is_removed(self, context_doc: Document) -> None:
+        result = MissingContextAttack().apply(context_doc, seed=SEED)
+        assert "housing costs" not in result.text
+        assert "However" not in result.text
+
+    def test_core_statistic_sentence_is_preserved(self, context_doc: Document) -> None:
+        result = MissingContextAttack().apply(context_doc, seed=SEED)
+        assert "Inflation rose to 3.5% in 2023." in result.text
+
+    def test_determinism(self, context_doc: Document) -> None:
+        r1 = MissingContextAttack().apply(context_doc, seed=SEED)
+        r2 = MissingContextAttack().apply(context_doc, seed=SEED)
+        assert r1.text == r2.text
+
+    def test_no_global_state_mutation(self, context_doc: Document) -> None:
+        random.seed(0)
+        before = random.random()
+        random.seed(0)
+        MissingContextAttack().apply(context_doc, seed=SEED)
+        after = random.random()
+        assert before == after
+
+    def test_no_op_when_no_context_marker(self, base_doc: Document) -> None:
+        """
+        base_doc has no recognized caveat/context marker, so the attack must
+        record no_op=True rather than fabricate a sentence to delete.
+        """
+        result = MissingContextAttack().apply(base_doc, seed=SEED)
+        assert result.text == base_doc.text
+        assert result.attack_params["no_op"] is True
+        assert result.attack_params["omitted_count"] == 0
+
+    def test_omitted_count_recorded_when_sentence_removed(self, context_doc: Document) -> None:
+        result = MissingContextAttack().apply(context_doc, seed=SEED)
+        assert result.attack_params["no_op"] is False
+        assert result.attack_params["omitted_count"] == 1
+
+    def test_sensitivity_classification_propagates_to_poisoned_doc(self, context_doc: Document) -> None:
+        context_doc.sensitivity_class = "S2"
+        context_doc.risk_level = 5
+        result = MissingContextAttack().apply(context_doc, seed=SEED)
+        assert result.sensitivity_class == "S2"
+        assert result.risk_level == 5
+
+
 # ─── _split_sentences (decimal-point-aware sentence splitting) ────────────────
 
 class TestSplitSentences:
@@ -497,7 +646,7 @@ class TestAttackRegistry:
 
     def test_all_builtin_attacks_registered(self) -> None:
         """
-        All four built-in attacks must be discoverable by name.
+        All six built-in attacks must be discoverable by name.
 
         This test acts as a guard against accidental removal of an attack from
         the auto-registration block in ``eiger.attacks.__init__``.
@@ -507,6 +656,8 @@ class TestAttackRegistry:
         assert "attribution_switch" in registered
         assert "date_manipulation" in registered
         assert "causal_manipulation" in registered
+        assert "cherry_picking" in registered
+        assert "missing_context" in registered
 
     def test_get_attack_returns_instance(self) -> None:
         """``get_attack`` must return a live instance of the correct class."""

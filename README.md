@@ -115,10 +115,10 @@ EIBench is a six-layer pipeline. Each layer is independently extensible via a pl
 | `date_manipulation` | Date Manipulation | Shifts year references: `2024` → `2019` | Type 2 | M02 |
 | `attribution_switch` | Attribution Switch | Replaces sources: `WHO` → `a blog` | Type 3 | M03 |
 | `causal_manipulation` | Causal Manipulation | Injects fabricated causal clauses | Type 4 | M04 |
-| — *(not implemented)* | Cherry-picking | Would omit qualifying context/baseline | — | M05 |
-| — *(not implemented)* | Missing Context | Would drop context needed to interpret the claim | — | M06 |
+| `cherry_picking` | Cherry-Picking | Deletes a comparative baseline clause: `"4.1%, compared to 6.8% in 2020"` → `"4.1%"` | Type 5 | M05 |
+| `missing_context` | Missing Context | Deletes an entire qualifying/caveat sentence | Type 6 | M06 |
 
-All implemented attacks: deterministic (seed-controlled), isolated (no global state mutation), extensible (plugin registry). M05/M06 are part of the project's own manipulation taxonomy but have no `eiger/attacks/` implementation yet — see [`docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §5](docs/CLAIM_AND_RESEARCH_QUESTIONS.md#5-manipulation-taxonomy-m01m06).
+All six implemented attacks: deterministic (seed-controlled), isolated (no global state mutation), extensible (plugin registry). `cherry_picking`/`missing_context` complete the project's M01–M06 manipulation taxonomy 1:1 (Sprint 4/5) — see [`docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §5](docs/CLAIM_AND_RESEARCH_QUESTIONS.md#5-manipulation-taxonomy-m01m06).
 
 ---
 
@@ -204,7 +204,7 @@ make ollama-pull
 
 ```bash
 eiger list-datasets     # averitec, factcheck_org, json_fixture, politifact, snopes
-eiger list-attacks      # numerical_shift, attribution_switch, date_manipulation, causal_manipulation
+eiger list-attacks      # numerical_shift, attribution_switch, date_manipulation, causal_manipulation, cherry_picking, missing_context
 eiger list-metrics      # ers, ffr, prd, prr, source_integrity
 
 eiger run experiments/config.yaml

@@ -83,9 +83,28 @@ def configure_logging(level: str = "INFO") -> None:
         # Use a plain dict as the context class — no thread-local magic here;
         # merge_contextvars handles that via the processor above.
         context_class=dict,
-        # PrintLoggerFactory writes to stdout via print(). For production,
-        # swap to WritelnLogger or stdlib integration.
-        logger_factory=structlog.PrintLoggerFactory(),
+        # Bug fix (found while running a new engineering pilot script and
+        # hitting a hard crash on the very first real log call): this was
+        # previously `structlog.PrintLoggerFactory()`, which produces
+        # `PrintLogger` instances that have no `.name` attribute. The
+        # `structlog.stdlib.add_logger_name` processor above (step 3) always
+        # reads `logger.name` off the underlying logger object — a
+        # requirement satisfied by stdlib `logging.Logger` (which
+        # `structlog.stdlib.LoggerFactory()` produces) but not by
+        # `PrintLogger`. The mismatch meant `configure_logging()` +ANY+
+        # subsequent `log.info()/.warning()/etc.` call raised
+        # `AttributeError: 'PrintLogger' object has no attribute 'name'`
+        # unconditionally — this was never caught by tests/unit/test_logging.py
+        # because those tests call `configure_logging()` and `get_logger()`
+        # separately, but never actually emit a log line through the fully
+        # configured pipeline in the same test. This bug affected every real
+        # invocation of this function: pipeline_eibench.py, epistemic.py, and
+        # `python -m eiger run ...` would all have crashed on their first log
+        # call. get_logger()'s own return-type annotation
+        # (structlog.stdlib.BoundLogger) already assumed the stdlib bridge
+        # this factory now actually provides, matching this module's stated
+        # purpose ("Configure structlog AND the stdlib logging bridge").
+        logger_factory=structlog.stdlib.LoggerFactory(),
     )
 
 

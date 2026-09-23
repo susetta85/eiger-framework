@@ -4,6 +4,10 @@
 # claimed effect saturates, keeps growing linearly, or plateaus above it.
 #
 # Run with: make run CFG=experiments/poison_rate_sweep/sweep_10pct.yaml
+#
+# ENGINEERING SWEEP, NOT EIB PAPER RESULTS — see sweep_1pct.yaml's note:
+# synthetic Snopes dataset, includes attribution_switch (M03) and
+# cherry_picking (M05), both absent from the published EIB corpus.
 
 experiment_id: poison_sweep_10pct
 description: "Poison-rate sweep point 5/5: poison_rate=0.10 (10%), all 6 attacks"
@@ -14,6 +18,8 @@ dataset:
   path: null       # uses SnopesDataset's default: data/snopes/snopes_enriched.json
   split: test
   max_claims: 100
+
+allow_non_benchmark_attacks: true  # includes M03/M05 — see note above
 
 attacks:
   - name: numerical_shift

@@ -211,6 +211,31 @@ class TestCorpusBuilder:
         result = builder.build(two_claims)
         for doc in result.ground_truth_docs:
             assert doc.sensitivity_class is None
+
+    def test_ground_truth_label_propagates_to_ground_truth_doc(self) -> None:
+        """
+        A claim's ground_truth_label must be propagated onto its
+        ground-truth Document — independent of doc_type, which stays
+        "ground_truth" (manipulation_status) regardless of this value.
+        """
+        claim = Claim(
+            claim_id="C1",
+            original_fact="fact",
+            context_query="q",
+            ground_truth_label="verified_false",
+        )
+        builder = CorpusBuilder(attacks=[], seed=42)
+        result = builder.build([claim])
+        assert result.ground_truth_docs[0].ground_truth_label == "verified_false"
+        assert result.ground_truth_docs[0].doc_type == "ground_truth"
+
+    def test_unclassified_ground_truth_label_stays_none(
+        self, two_claims: list[Claim]
+    ) -> None:
+        builder = CorpusBuilder(attacks=[], seed=42)
+        result = builder.build(two_claims)
+        for doc in result.ground_truth_docs:
+            assert doc.ground_truth_label is None
             assert doc.risk_level is None
 
     def test_poisoned_doc_type_is_poisoned(self, two_claims: list[Claim]) -> None:
@@ -250,3 +275,72 @@ class TestCorpusBuilder:
         r2 = CorpusBuilder(attacks=[(attack, cfg)], seed=9999).build(two_claims)
         # Just verify both runs complete without error and produce the right count.
         assert len(r1.poisoned_docs) == len(r2.poisoned_docs)
+
+
+# ─── Non-benchmark attack gating (M03/M05) ─────────────────────────────────────
+
+class TestNonBenchmarkAttackGating:
+    """
+    Tests for CorpusBuilder's refusal to run attacks flagged
+    excluded_from_benchmark (AttributionSwitchAttack/M03,
+    CherryPickingAttack/M05) unless allow_non_benchmark_attacks=True.
+
+    See eiger/ingestion/corpus_builder.py's own docstring and each attack's
+    module docstring for the ethical rationale: both manipulation
+    categories are explicitly absent from the EIB paper's published corpus
+    (Corpus_claim_RAG_Mistral_output_v3.xlsx).
+    """
+
+    def test_attribution_switch_flagged_excluded_from_benchmark(self) -> None:
+        from eiger.attacks.attribution import AttributionSwitchAttack
+
+        assert AttributionSwitchAttack.excluded_from_benchmark is True
+
+    def test_cherry_picking_flagged_excluded_from_benchmark(self) -> None:
+        from eiger.attacks.cherry_picking import CherryPickingAttack
+
+        assert CherryPickingAttack.excluded_from_benchmark is True
+
+    def test_ordinary_attack_not_flagged(self) -> None:
+        assert NumericalShiftAttack.excluded_from_benchmark is False
+
+    def test_gated_attack_raises_configuration_error_by_default(self) -> None:
+        from eiger.attacks.attribution import AttributionSwitchAttack
+        from eiger.core.exceptions import ConfigurationError
+
+        attack = AttributionSwitchAttack()
+        cfg = AttackConfig(name="attribution_switch", poison_rate=0.5)
+        with pytest.raises(ConfigurationError, match="attribution_switch"):
+            CorpusBuilder(attacks=[(attack, cfg)], seed=42)
+
+    def test_gated_attack_allowed_with_explicit_opt_in(
+        self, two_claims: list[Claim]
+    ) -> None:
+        from eiger.attacks.attribution import AttributionSwitchAttack
+
+        attack = AttributionSwitchAttack()
+        cfg = AttackConfig(name="attribution_switch", poison_rate=1.0)
+        builder = CorpusBuilder(
+            attacks=[(attack, cfg)], seed=42, allow_non_benchmark_attacks=True
+        )
+        result = builder.build(two_claims)
+        assert len(result.poisoned_docs) == len(two_claims)
+
+    def test_mixed_gated_and_ordinary_attacks_still_raises(self) -> None:
+        from eiger.attacks.attribution import AttributionSwitchAttack
+        from eiger.core.exceptions import ConfigurationError
+
+        ordinary = NumericalShiftAttack()
+        ordinary_cfg = AttackConfig(name="numerical_shift", poison_rate=0.5)
+        gated = AttributionSwitchAttack()
+        gated_cfg = AttackConfig(name="attribution_switch", poison_rate=0.5)
+        with pytest.raises(ConfigurationError):
+            CorpusBuilder(attacks=[(ordinary, ordinary_cfg), (gated, gated_cfg)], seed=42)
+
+    def test_ordinary_attack_never_needs_opt_in(self, two_claims: list[Claim]) -> None:
+        """An experiment using only non-flagged attacks must be unaffected."""
+        attack = NumericalShiftAttack()
+        cfg = AttackConfig(name="numerical_shift", poison_rate=1.0)
+        builder = CorpusBuilder(attacks=[(attack, cfg)], seed=42)  # no opt-in passed
+        result = builder.build(two_claims)
+        assert len(result.poisoned_docs) == len(two_claims)

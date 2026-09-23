@@ -22,6 +22,16 @@ things are missing from it that ``Claim`` requires:
 the raw export, generates a ``context_query`` for each surviving claim via
 a local Ollama LLM, and writes a JSON file in exactly the schema
 ``JSONFixtureDataset`` (this class's parent) already knows how to load.
+Every currently-cached entry (``data/snopes/snopes_enriched.json``, 2,928
+claims) is tagged ``ground_truth_label: "verified_true"`` (backfilled — all
+of them passed the True-only filter that has always been this script's
+default). The script also supports ``--include-verified-false`` to enrich
+``normalised_rating=False`` rows too, tagged ``"verified_false"``, but that
+flag has not yet been run against the full raw export (a further LLM
+enrichment pass, deferred pending compute availability — see
+docs/CLAIM_AND_RESEARCH_QUESTIONS.md §7) and that side of the filter has
+not had the same contamination audit as the True side (see that script's
+``filter_and_dedupe()`` docstring).
 This class only overrides ``name``/``description``/the default ``path``
 (pointing at the enrichment script's output rather than the bundled
 fixture), so that ``Claim.source_dataset`` correctly reports ``"snopes"``

@@ -45,6 +45,23 @@ measurement.
 
 Annotation scores are on a 1-5 scale where 5 represents the highest risk.
 
+**`attribution_switch` (M03) and `cherry_picking` (M05) are excluded from the
+EIB benchmark by default.** The paper draft (Imperatrice & Putortì,
+"Epistemic Integrity Benchmark") states that M03 was "excluded from
+automation because of its higher reputational and dual-use risk" and that
+M05, though present in the theoretical taxonomy, "does not occur in the
+final set of instances" of the published corpus
+(`Corpus_claim_RAG_Mistral_output_v3.xlsx` — confirmed: 0 rows for both
+categories). Both classes set `excluded_from_benchmark = True` (a `BaseAttack`
+class attribute — see `eiger/core/interfaces.py`), which makes
+`CorpusBuilder` raise `ConfigurationError` immediately if either is
+configured without `ExperimentConfig.allow_non_benchmark_attacks: true`. This
+is an explicit opt-in, not a silent default, precisely so a paper-facing
+experiment can never accidentally include a manipulation category the
+ethical protocol excluded. Both attacks remain fully functional for
+engineering ablations (see `experiments/ablation_attacks.yaml`) — the flag
+only prevents *silent* inclusion.
+
 **`attack_params["no_op"]` (Sprint 4 audit fix).** `numerical_shift`, `date_manipulation`,
 `attribution_switch`, `cherry_picking`, and `missing_context` each have a degenerate case
 where the document has nothing eligible to modify or omit (no digits, no year token, no

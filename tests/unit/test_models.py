@@ -110,6 +110,30 @@ class TestClaim:
             )
             assert claim.risk_level == level
 
+    def test_ground_truth_label_defaults_to_none(self) -> None:
+        """
+        None means the source dataset does not carry this rating — never
+        implicitly "verified_true" (see GroundTruthLabel's own comment,
+        eiger/core/models.py).
+        """
+        claim = Claim(claim_id="C1", original_fact="fact", context_query="q")
+        assert claim.ground_truth_label is None
+
+    def test_valid_ground_truth_label_values_accepted(self) -> None:
+        for label in ("verified_true", "verified_false"):
+            claim = Claim(
+                claim_id="C1", original_fact="fact", context_query="q",
+                ground_truth_label=label,
+            )
+            assert claim.ground_truth_label == label
+
+    def test_invalid_ground_truth_label_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            Claim(
+                claim_id="C1", original_fact="fact", context_query="q",
+                ground_truth_label="true",
+            )
+
 
 class TestDocument:
     """Tests for the Document domain model."""
@@ -147,6 +171,31 @@ class TestDocument:
         """risk_level outside [1, 5] must raise ValidationError."""
         with pytest.raises(ValidationError):
             Document(claim_id="C1", text="text", risk_level=0)
+
+    def test_ground_truth_label_defaults_to_none(self) -> None:
+        doc = Document(claim_id="C1", text="text")
+        assert doc.ground_truth_label is None
+
+    def test_valid_ground_truth_label_values_accepted(self) -> None:
+        for label in ("verified_true", "verified_false"):
+            doc = Document(claim_id="C1", text="text", ground_truth_label=label)
+            assert doc.ground_truth_label == label
+
+    def test_invalid_ground_truth_label_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            Document(claim_id="C1", text="text", ground_truth_label="false")
+
+    def test_ground_truth_label_independent_of_doc_type(self) -> None:
+        """
+        A verified_false claim can still be doc_type='ground_truth'
+        ("clean but naturally false") — the two axes are not coupled.
+        """
+        doc = Document(
+            claim_id="C1", text="text", doc_type="ground_truth",
+            ground_truth_label="verified_false",
+        )
+        assert doc.doc_type == "ground_truth"
+        assert doc.ground_truth_label == "verified_false"
 
 
 class TestPoisonAnnotation:
@@ -274,6 +323,27 @@ class TestExperimentConfig:
                 faithfulness_scorer=value,
             )
             assert cfg.faithfulness_scorer == value
+
+    def test_allow_non_benchmark_attacks_defaults_to_false(self) -> None:
+        """
+        Safe-by-default: a config that doesn't mention this field must not
+        silently permit M03/M05 attacks (see eiger/ingestion/corpus_builder.py).
+        """
+        cfg = ExperimentConfig(
+            dataset=DatasetConfig(name="json_fixture"),
+            retriever=RetrieverConfig(),
+            llm=LLMConfig(),
+        )
+        assert cfg.allow_non_benchmark_attacks is False
+
+    def test_allow_non_benchmark_attacks_accepts_true(self) -> None:
+        cfg = ExperimentConfig(
+            dataset=DatasetConfig(name="json_fixture"),
+            retriever=RetrieverConfig(),
+            llm=LLMConfig(),
+            allow_non_benchmark_attacks=True,
+        )
+        assert cfg.allow_non_benchmark_attacks is True
 
     def test_config_hash_deterministic(self) -> None:
         """

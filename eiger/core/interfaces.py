@@ -62,10 +62,23 @@ class BaseAttack(ABC):
     Attributes:
         name:        Unique string identifier used in config YAML and registry.
         description: Human-readable description written to experiment logs.
+        excluded_from_benchmark: True for attacks that produce a manipulation
+            category NOT present in the EIB paper's published corpus
+            (Corpus_claim_RAG_Mistral_output_v3.xlsx) — currently
+            AttributionSwitchAttack (M03, excluded from that pipeline's
+            automation "for reputational and dual-use risk" per the paper's
+            §6.0.2) and CherryPickingAttack (M05, "does not occur in the
+            final set of instances" per the same section). Defaults to
+            False for every other attack. CorpusBuilder refuses to run a
+            flagged attack unless explicitly told to via
+            ``allow_non_benchmark_attacks=True`` — see its own docstring —
+            so a paper-facing experiment can never silently include a
+            manipulation category the ethical protocol excluded.
     """
 
     name: str        # Unique identifier, used in config YAML and registry
     description: str # Human-readable description for experiment logs
+    excluded_from_benchmark: bool = False
 
     @abstractmethod
     def apply(self, document: Document, seed: int, **kwargs: Any) -> PoisonedDocument:

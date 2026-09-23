@@ -18,9 +18,12 @@ What these tests do NOT cover:
 
 from __future__ import annotations
 
+import io
+import urllib.error
+import zipfile
 from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -189,6 +192,61 @@ class TestPolitiFactDatasetLoad:
             PolitiFactDataset(data_dir=data_dir).load()
 
 
+# ─── ground_truth_label / include_verified_false ─────────────────────────────
+
+class TestPolitiFactDatasetGroundTruthLabel:
+    def test_true_row_tagged_verified_true_by_default(self, data_dir: Path) -> None:
+        _write_tsv(data_dir / "test.tsv", [_row(label="true")])
+        claim = PolitiFactDataset(data_dir=data_dir).load()[0]
+        assert claim.ground_truth_label == "verified_true"
+
+    def test_false_and_pants_fire_excluded_by_default(self, data_dir: Path) -> None:
+        rows = [
+            _row(claim_id="1", label="false", statement="Claim A"),
+            _row(claim_id="2", label="pants-fire", statement="Claim B"),
+        ]
+        _write_tsv(data_dir / "test.tsv", rows)
+        assert PolitiFactDataset(data_dir=data_dir).load() == []
+
+    def test_include_verified_false_keeps_false_and_pants_fire(self, data_dir: Path) -> None:
+        rows = [
+            _row(claim_id="1", label="true", statement="Claim A"),
+            _row(claim_id="2", label="false", statement="Claim B"),
+            _row(claim_id="3", label="pants-fire", statement="Claim C"),
+        ]
+        _write_tsv(data_dir / "test.tsv", rows)
+        claims = PolitiFactDataset(data_dir=data_dir).load(include_verified_false=True)
+        by_text = {c.original_fact: c.ground_truth_label for c in claims}
+        assert by_text == {
+            "Claim A": "verified_true",
+            "Claim B": "verified_false",
+            "Claim C": "verified_false",
+        }
+
+    def test_to_claim_direct_call_with_unrecognized_label_yields_none(self, data_dir: Path) -> None:
+        """
+        Coverage for _to_claim's defensive `else: ground_truth_label = None`
+        branch — unreachable via load() (its filter never lets a
+        non-true/false label through to _to_claim), exercised here via a
+        direct call to confirm the fallback itself is correct.
+        """
+        dataset = PolitiFactDataset(data_dir=data_dir)
+        claim = dataset._to_claim(_row(label="half-true"))
+        assert claim.ground_truth_label is None
+
+    def test_include_verified_false_still_excludes_middle_scale_labels(
+        self, data_dir: Path
+    ) -> None:
+        rows = [
+            _row(claim_id="1", label="barely-true", statement="Claim A"),
+            _row(claim_id="2", label="half-true", statement="Claim B"),
+            _row(claim_id="3", label="mostly-true", statement="Claim C"),
+        ]
+        _write_tsv(data_dir / "test.tsv", rows)
+        claims = PolitiFactDataset(data_dir=data_dir).load(include_verified_false=True)
+        assert claims == []
+
+
 # ─── content_hash ─────────────────────────────────────────────────────────────
 
 class TestPolitiFactDatasetContentHash:
@@ -218,17 +276,110 @@ class TestPolitiFactDatasetContentHash:
 
 # ─── download() ─────────────────────────────────────────────────────────────
 
+def _zip_bytes(members: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, content in members.items():
+            archive.writestr(name, content)
+    return buffer.getvalue()
+
+
 class TestPolitiFactDatasetDownload:
+    """
+    download() now attempts a real fetch (stdlib urllib + zipfile) when no
+    `*.tsv` files are already present. Every test here mocks
+    urllib.request.urlopen rather than hitting the network.
+    """
+
     def test_download_noops_when_tsv_files_already_present(self, data_dir: Path) -> None:
         _write_tsv(data_dir / "test.tsv", [_row()])
         PolitiFactDataset(data_dir=data_dir).download(str(data_dir))  # must not raise
 
-    def test_download_raises_when_directory_missing(self, tmp_path: Path) -> None:
+    def test_download_raises_on_network_error(self, tmp_path: Path) -> None:
         missing = tmp_path / "does-not-exist"
-        with pytest.raises(IngestionError, match="Automated download is not implemented"):
-            PolitiFactDataset().download(str(missing))
+        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("no network")):
+            with pytest.raises(IngestionError, match="Failed to download"):
+                PolitiFactDataset().download(str(missing))
 
-    def test_download_raises_when_directory_empty(self, data_dir: Path) -> None:
-        data_dir.mkdir(parents=True, exist_ok=True)
-        with pytest.raises(IngestionError, match="Automated download is not implemented"):
-            PolitiFactDataset().download(str(data_dir))
+    def test_download_extracts_tsv_members_and_flattens_paths(self, tmp_path: Path) -> None:
+        target = tmp_path / "politifact"
+        archive = _zip_bytes({
+            "liar_dataset/train.tsv": b"train-content",
+            "liar_dataset/test.tsv": b"test-content",
+            "liar_dataset/README": b"not a tsv",
+        })
+        fake_response = MagicMock()
+        fake_response.read.return_value = archive
+        fake_response.__enter__.return_value = fake_response
+
+        with patch("urllib.request.urlopen", return_value=fake_response):
+            PolitiFactDataset().download(str(target))  # must not raise
+
+        assert (target / "train.tsv").read_bytes() == b"train-content"
+        assert (target / "test.tsv").read_bytes() == b"test-content"
+        assert not (target / "README").exists()
+
+    def test_download_raises_when_archive_has_no_tsv_files(self, tmp_path: Path) -> None:
+        target = tmp_path / "politifact"
+        archive = _zip_bytes({"README": b"nothing useful here"})
+        fake_response = MagicMock()
+        fake_response.read.return_value = archive
+        fake_response.__enter__.return_value = fake_response
+
+        with patch("urllib.request.urlopen", return_value=fake_response):
+            with pytest.raises(IngestionError, match="contains no '\\*.tsv' files"):
+                PolitiFactDataset().download(str(target))
+
+    def test_download_warns_on_duplicate_flattened_member_names(self, tmp_path: Path) -> None:
+        """
+        Regression test for a real bug found in review: two archive members
+        that flatten to the same filename (e.g. a nested duplicate copy)
+        used to silently overwrite one another with no record of it — now
+        logged as a warning instead.
+        """
+        target = tmp_path / "politifact"
+        archive = _zip_bytes({
+            "liar_dataset/train.tsv": b"real-train-content",
+            "liar_dataset/backup/train.tsv": b"duplicate-train-content",
+        })
+        fake_response = MagicMock()
+        fake_response.read.return_value = archive
+        fake_response.__enter__.return_value = fake_response
+
+        with patch("urllib.request.urlopen", return_value=fake_response):
+            with patch("eiger.datasets.politifact.log") as mock_log:
+                PolitiFactDataset().download(str(target))  # must not raise
+
+        mock_log.warning.assert_called_once()
+        assert mock_log.warning.call_args.args[0] == "politifact.download_duplicate_flattened_name"
+        # Whichever member sorts last in the zip's own namelist() order wins;
+        # the point of this test is that it happened loudly, not silently.
+        assert (target / "train.tsv").exists()
+
+    def test_download_raises_on_write_failure(self, tmp_path: Path) -> None:
+        """
+        Regression test for a real bug found in review: mkdir()/write_bytes()
+        used to sit outside any OSError handling, so a disk-full/permission-
+        denied failure would escape as a raw OSError instead of the
+        documented IngestionError.
+        """
+        target = tmp_path / "politifact"
+        archive = _zip_bytes({"train.tsv": b"content"})
+        fake_response = MagicMock()
+        fake_response.read.return_value = archive
+        fake_response.__enter__.return_value = fake_response
+
+        with patch("urllib.request.urlopen", return_value=fake_response):
+            with patch.object(Path, "write_bytes", side_effect=OSError("disk full")):
+                with pytest.raises(IngestionError, match="Failed to write extracted LIAR files"):
+                    PolitiFactDataset().download(str(target))
+
+    def test_download_raises_on_invalid_zip_content(self, tmp_path: Path) -> None:
+        target = tmp_path / "politifact"
+        fake_response = MagicMock()
+        fake_response.read.return_value = b"this is not a zip file"
+        fake_response.__enter__.return_value = fake_response
+
+        with patch("urllib.request.urlopen", return_value=fake_response):
+            with pytest.raises(IngestionError, match="not a valid zip archive"):
+                PolitiFactDataset().download(str(target))

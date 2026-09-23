@@ -280,6 +280,24 @@ class TestUpsert:
         assert payload["sensitivity_class"] is None
         assert payload["risk_level"] is None
 
+    def test_payload_includes_ground_truth_label(self) -> None:
+        """
+        Regression test: ground_truth_label (added alongside the M03/M05
+        gating work) lives on the base Document class, same as
+        sensitivity_class/risk_level — it must not be silently dropped on
+        the exact round trip that motivated the original Sprint 4 fix.
+        """
+        doc = Document(
+            doc_id="d1", claim_id="C1", text="text", doc_type="ground_truth",
+            ground_truth_label="verified_false",
+        )
+        payload = _document_to_payload(doc)
+        assert payload["ground_truth_label"] == "verified_false"
+
+    def test_payload_ground_truth_label_defaults_to_none(self) -> None:
+        payload = _document_to_payload(_make_doc())
+        assert payload["ground_truth_label"] is None
+
     def test_poisoned_payload_carries_full_provenance(self) -> None:
         """
         Regression test (Sprint 4 audit): a PoisonedDocument's payload must

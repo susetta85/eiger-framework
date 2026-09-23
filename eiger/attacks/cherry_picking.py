@@ -112,9 +112,24 @@ class CherryPickingAttack(BaseAttack):
       safe generic fallback for "invent a baseline clause to then delete".
 
     EIBench taxonomy: Type 5 (M05).
+
+    Excluded from the EIB paper's published benchmark corpus
+    ------------------------------------------------------------
+    The paper draft (Imperatrice & Putortì, "Epistemic Integrity Benchmark")
+    lists M05 in its theoretical taxonomy but states it "does not occur in
+    the final set of instances" (§6.0.2) — the Mistral-generated corpus
+    (Corpus_claim_RAG_Mistral_output_v3.xlsx) contains zero M05 rows.
+    This class still exists and is fully functional for engineering
+    validation/ablation purposes, but ``excluded_from_benchmark = True``
+    makes ``CorpusBuilder`` refuse to run it unless the caller explicitly
+    opts in via ``allow_non_benchmark_attacks=True`` — see that class's own
+    docstring. Do not use this attack to produce results reported as part
+    of the EIB benchmark without first re-confirming with the ethics/
+    threat-model protocol that governs the published corpus.
     """
 
     name: str = "cherry_picking"
+    excluded_from_benchmark: bool = True
 
     description: str = (
         "Deletes a comparative baseline/reference-period clause "
@@ -216,6 +231,7 @@ class CherryPickingAttack(BaseAttack):
             # less sensitive than its source.
             sensitivity_class=document.sensitivity_class,
             risk_level=document.risk_level,
+            ground_truth_label=document.ground_truth_label,
         )
 
     def describe(self) -> dict[str, Any]:

@@ -407,6 +407,34 @@ class TestPoisonedDocumentReconstruction:
         assert doc.sensitivity_class is None
         assert doc.risk_level is None
 
+    def test_ground_truth_hit_restores_ground_truth_label(self) -> None:
+        """
+        Regression test (added alongside the M03/M05 gating work):
+        ground_truth_label lives on the base Document class, same as
+        sensitivity_class/risk_level, and must round-trip the same way.
+        """
+        raw_hits = [_make_raw_hit("doc-1", 0.9)]
+        raw_hits[0]["payload"]["ground_truth_label"] = "verified_false"
+        retriever, _, _ = _make_retriever(search_results=raw_hits)
+        result = retriever.retrieve("query", claim_id="C1", top_k=5)
+        assert result.hits[0].document.ground_truth_label == "verified_false"
+
+    def test_poisoned_hit_restores_ground_truth_label(self) -> None:
+        raw_hits = [_make_poisoned_raw_hit("doc-1", 0.9)]
+        raw_hits[0]["payload"]["ground_truth_label"] = "verified_true"
+        retriever, _, _ = _make_retriever(search_results=raw_hits)
+        result = retriever.retrieve("query", claim_id="C1", top_k=5)
+        doc = result.hits[0].document
+        assert isinstance(doc, PoisonedDocument)
+        assert doc.ground_truth_label == "verified_true"
+
+    def test_legacy_payload_missing_ground_truth_label_degrades_to_none(self) -> None:
+        raw_hits = [_make_raw_hit("doc-1", 0.9)]
+        assert "ground_truth_label" not in raw_hits[0]["payload"]
+        retriever, _, _ = _make_retriever(search_results=raw_hits)
+        result = retriever.retrieve("query", claim_id="C1", top_k=5)
+        assert result.hits[0].document.ground_truth_label is None
+
 
 # ─── Score normalization ──────────────────────────────────────────────────────
 

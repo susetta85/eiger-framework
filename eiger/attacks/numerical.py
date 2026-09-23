@@ -157,6 +157,7 @@ class NumericalShiftAttack(BaseAttack):
             # less sensitive than its source.
             sensitivity_class=document.sensitivity_class,
             risk_level=document.risk_level,
+            ground_truth_label=document.ground_truth_label,
         )
 
     def describe(self) -> dict[str, Any]:

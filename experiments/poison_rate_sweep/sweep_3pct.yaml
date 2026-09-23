@@ -2,6 +2,10 @@
 # See sweep_0pct.yaml for the full rationale shared by all 5 sweep points.
 #
 # Run with: make run CFG=experiments/poison_rate_sweep/sweep_3pct.yaml
+#
+# ENGINEERING SWEEP, NOT EIB PAPER RESULTS — see sweep_1pct.yaml's note:
+# synthetic Snopes dataset, includes attribution_switch (M03) and
+# cherry_picking (M05), both absent from the published EIB corpus.
 
 experiment_id: poison_sweep_3pct
 description: "Poison-rate sweep point 3/5: poison_rate=0.03 (3%), all 6 attacks"
@@ -12,6 +16,8 @@ dataset:
   path: null       # uses SnopesDataset's default: data/snopes/snopes_enriched.json
   split: test
   max_claims: 100
+
+allow_non_benchmark_attacks: true  # includes M03/M05 — see note above
 
 attacks:
   - name: numerical_shift

@@ -74,6 +74,10 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
+import urllib.error
+import urllib.request
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -81,6 +85,13 @@ from eiger.core.exceptions import IngestionError
 from eiger.core.interfaces import BaseDataset
 from eiger.core.models import Claim
 from eiger.utils.logging import get_logger
+
+# The stable, long-standing public URL for the LIAR dataset archive — the
+# same one already documented as the manual fallback (docs/DATASETS.md
+# section 4). Unlike the CheckThat!/FactCheck.org archive (see
+# eiger/datasets/factcheck.py), this dataset's zip layout (train.tsv/
+# test.tsv/valid.tsv at the archive root) has been stable for years.
+_LIAR_ZIP_URL = "https://www.cs.ucsb.edu/~william/data/liar_dataset.zip"
 
 log = get_logger(__name__)
 
@@ -93,6 +104,12 @@ _DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "politifact"
 # the module docstring's note on why this differs from docs/DATASETS.md
 # section 4's own (stale) example comment.
 _VERIFIED_TRUE_LABEL = "true"
+# The two unambiguous false-end labels of LIAR's 6-point scale, kept only
+# when include_verified_false=True (see load()). The three middle labels
+# ("barely-true", "half-true", "mostly-true") are deliberately never kept
+# for either ground_truth_label value — collapsing a graded truth scale
+# into a strict binary would misrepresent them.
+_VERIFIED_FALSE_LABELS = {"false", "pants-fire"}
 
 # Column indices per docs/DATASETS.md section 4's field table. See the
 # module docstring's caveat: `_CONTEXT_COLUMN` in particular is not
@@ -151,37 +168,103 @@ class PolitiFactDataset(BaseDataset):
 
     def download(self, target_dir: str) -> None:
         """
-        Guard, not a fetcher — see the class/module docstring.
+        Fetch and extract the LIAR dataset archive.
 
         No-ops (logged at debug level) if at least one ``*.tsv`` file
-        already exists directly under ``target_dir``. Otherwise raises
-        IngestionError with the manual download steps from
-        docs/DATASETS.md, rather than silently doing nothing and letting
-        a later load() fail with a confusing bare "file not found".
+        already exists directly under ``target_dir`` — never overwrites
+        data that might already be a deliberately-curated subset. Otherwise
+        downloads ``_LIAR_ZIP_URL`` (stdlib ``urllib``, no new dependency)
+        and extracts every ``*.tsv`` member directly into ``target_dir``
+        (flattened to just its filename, in case the archive nests them
+        under a subdirectory) — matching the manual steps already
+        documented in docs/DATASETS.md section 4.
+
+        IMPORTANT — written and reviewed carefully but NOT exercised against
+        a live network call: this sandbox's outbound network allowlist
+        blocks the download URL, so this method's logic could not be
+        verified end-to-end here. Before relying on it, run it once on a
+        machine with real internet access and confirm the resulting
+        ``*.tsv`` files load correctly via this class's own ``load()``.
 
         Args:
-            target_dir: Directory expected to contain LIAR's
-                        ``<split>.tsv`` files.
+            target_dir: Directory to extract LIAR's ``<split>.tsv`` files
+                        into (created if missing).
 
         Raises:
-            IngestionError: If no ``*.tsv`` files are present.
+            IngestionError: If the download fails (network error, non-200
+                            response) or the archive contains no ``*.tsv``
+                            files at all — never a silent no-op.
         """
         target = Path(target_dir)
         if target.is_dir() and any(target.glob("*.tsv")):
             log.debug("politifact.download_noop_already_present", target_dir=target_dir)
             return
-        log.debug("politifact.download_missing", target_dir=target_dir)
-        raise IngestionError(
-            f"No LIAR '*.tsv' split files found under '{target_dir}'. "
-            "Automated download is not implemented yet — see "
-            "docs/DATASETS.md, section 4, for the exact manual download "
-            "steps (wget the liar_dataset.zip archive and unzip it)."
-        )
 
-    def load(self, split: str = "test", max_claims: int | None = None) -> list[Claim]:
+        try:
+            with urllib.request.urlopen(_LIAR_ZIP_URL, timeout=60) as response:
+                archive_bytes = response.read()
+        except (urllib.error.URLError, OSError) as exc:
+            raise IngestionError(
+                f"Failed to download the LIAR archive from '{_LIAR_ZIP_URL}': {exc}. "
+                "See docs/DATASETS.md section 4 for the manual download steps."
+            ) from exc
+
+        try:
+            with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+                tsv_members = [name for name in archive.namelist() if name.endswith(".tsv")]
+                if not tsv_members:
+                    raise IngestionError(
+                        f"Downloaded archive from '{_LIAR_ZIP_URL}' contains no '*.tsv' files "
+                        "— the upstream archive layout may have changed. See "
+                        "docs/DATASETS.md section 4 for the manual download steps."
+                    )
+                target.mkdir(parents=True, exist_ok=True)
+                written_names: set[str] = set()
+                for member in tsv_members:
+                    # Flatten to just the filename: some archive layouts nest
+                    # these under a subdirectory, and load() only looks for
+                    # <target_dir>/<split>.tsv directly, not recursively.
+                    flattened_name = Path(member).name
+                    if flattened_name in written_names:
+                        # Bug fix (found in review): two archive members that
+                        # flatten to the same filename (e.g. a duplicate
+                        # nested copy, or a __MACOSX/ resource-fork variant)
+                        # would otherwise silently overwrite one another with
+                        # no record of it happening — log it instead of
+                        # letting it pass unnoticed.
+                        log.warning(
+                            "politifact.download_duplicate_flattened_name",
+                            member=member, flattened_name=flattened_name,
+                        )
+                    (target / flattened_name).write_bytes(archive.read(member))
+                    written_names.add(flattened_name)
+        except zipfile.BadZipFile as exc:
+            raise IngestionError(
+                f"Downloaded content from '{_LIAR_ZIP_URL}' is not a valid zip archive: {exc}. "
+                "See docs/DATASETS.md section 4 for the manual download steps."
+            ) from exc
+        except OSError as exc:
+            # Bug fix (found in review): mkdir()/write_bytes() used to sit
+            # outside any OSError handling, so a disk-full/permission-denied/
+            # read-only-filesystem failure would escape as a raw OSError
+            # instead of the documented IngestionError.
+            raise IngestionError(
+                f"Failed to write extracted LIAR files to '{target_dir}': {exc}. "
+                "See docs/DATASETS.md section 4 for the manual download steps."
+            ) from exc
+
+        log.info("politifact.download_complete", files=tsv_members, target_dir=target_dir)
+
+    def load(
+        self,
+        split: str = "test",
+        max_claims: int | None = None,
+        include_verified_false: bool = False,
+    ) -> list[Claim]:
         """
         Parse ``<data_dir>/<split>.tsv`` and return Claim objects for
-        every ``label == "true"`` record, in file order.
+        every ``label == "true"`` record (plus ``"false"``/``"pants-fire"``
+        records if ``include_verified_false=True``), in file order.
 
         Args:
             split:      Selects ``<data_dir>/<split>.tsv`` (e.g. "test",
@@ -190,9 +273,17 @@ class PolitiFactDataset(BaseDataset):
                         the first N in file order after filtering (file
                         order is stable and deterministic — no re-sorting
                         is needed).
+            include_verified_false: Default False, preserving this loader's
+                        original behavior exactly (verified-true subset
+                        only). If True, also includes "false"/"pants-fire"
+                        records, tagged ``Claim.ground_truth_label =
+                        "verified_false"``. The three middle-scale labels
+                        ("barely-true", "half-true", "mostly-true") are
+                        never included either way.
 
         Returns:
-            List of Claim objects for the verified-true subset.
+            List of Claim objects for the verified-true (and optionally
+            verified-false) subset.
 
         Raises:
             IngestionError: If the split file is missing, unreadable, or
@@ -203,10 +294,14 @@ class PolitiFactDataset(BaseDataset):
         log.debug("politifact.load_start", path=str(file_path), split=split)
         rows = self._read_tsv(file_path)
 
+        kept_labels = {_VERIFIED_TRUE_LABEL}
+        if include_verified_false:
+            kept_labels |= _VERIFIED_FALSE_LABELS
+
         claims = [
             self._to_claim(row)
             for row in rows
-            if row[_LABEL_COLUMN].strip().lower() == _VERIFIED_TRUE_LABEL
+            if row[_LABEL_COLUMN].strip().lower() in kept_labels
         ]
 
         if max_claims is not None:
@@ -277,6 +372,14 @@ class PolitiFactDataset(BaseDataset):
         statement = row[_STATEMENT_COLUMN].strip()
         context_query = f"Is it true that {statement}?"
 
+        label = row[_LABEL_COLUMN].strip().lower()
+        if label == _VERIFIED_TRUE_LABEL:
+            ground_truth_label = "verified_true"
+        elif label in _VERIFIED_FALSE_LABELS:
+            ground_truth_label = "verified_false"
+        else:
+            ground_truth_label = None  # unreachable given load()'s filter, kept defensive
+
         metadata: dict[str, Any] = {
             "label": row[_LABEL_COLUMN].strip(),
             "verified": False,
@@ -296,4 +399,5 @@ class PolitiFactDataset(BaseDataset):
             context_query=context_query,
             source_dataset=self.name,
             metadata=metadata,
+            ground_truth_label=ground_truth_label,
         )

@@ -92,6 +92,7 @@ def _make_config(
     temperature: float = 0.0,
     max_tokens: int = 512,
     retriever_type: str = "dense",
+    allow_non_benchmark_attacks: bool = False,
 ) -> ExperimentConfig:
     """Build a minimal, valid ExperimentConfig for runner tests."""
     return ExperimentConfig(
@@ -104,6 +105,7 @@ def _make_config(
         llm=LLMConfig(temperature=temperature, max_tokens=max_tokens),
         metrics=metrics if metrics is not None else [],
         output_dir=str(tmp_path),
+        allow_non_benchmark_attacks=allow_non_benchmark_attacks,
     )
 
 
@@ -276,6 +278,36 @@ class TestRunCorpusBuilding:
         )
         with pytest.raises(AttackNotFoundError):
             runner.run([_make_claim()], save=False)
+
+    def test_non_benchmark_attack_raises_configuration_error_by_default(
+        self, tmp_path: Path
+    ) -> None:
+        """
+        attribution_switch (M03) is excluded_from_benchmark — run() must
+        refuse it unless config.allow_non_benchmark_attacks is True (see
+        eiger/ingestion/corpus_builder.py).
+        """
+        from eiger.core.exceptions import ConfigurationError
+
+        runner, _, _, _ = _make_runner(
+            tmp_path,
+            attacks=[AttackConfig(name="attribution_switch", poison_rate=1.0)],
+        )
+        with pytest.raises(ConfigurationError, match="attribution_switch"):
+            runner.run([_make_claim()], save=False)
+
+    def test_non_benchmark_attack_allowed_with_explicit_opt_in(
+        self, tmp_path: Path
+    ) -> None:
+        runner, _, mock_vector_store, _ = _make_runner(
+            tmp_path,
+            attacks=[AttackConfig(name="attribution_switch", poison_rate=1.0)],
+            allow_non_benchmark_attacks=True,
+        )
+        runner.run([_make_claim()], save=False)
+        args, _ = mock_vector_store.upsert.call_args
+        # 1 ground-truth + 1 poisoned.
+        assert len(args[1]) == 2
 
 
 # ─── run() — ingestion ─────────────────────────────────────────────────────────

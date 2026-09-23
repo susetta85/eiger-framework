@@ -32,7 +32,9 @@ Fact-checking corpora — originally created for automated claim verification re
 
 This is also what distinguishes EIBench's approach from benchmarks that sample naturally-occurring misinformation as-is (e.g. RAGuard) or inject adversarially-optimized text (e.g. PoisonedRAG): every poisoned document here starts from a real, independently-verified true claim, and the poisoning engine (Section 3's Layer 2 of `docs/ARCHITECTURE.md`) applies one specific, well-defined type of factual edit to it. See `docs/ARCHITECTURE.md` §2 ("Related Work and Positioning") for the full literature comparison and an honest list of current limitations.
 
-**Note on a second, parallel claim source.** The four loaders in this document are the automated path from raw fact-checking exports to `Claim` objects, feeding `eiger.attacks`' own mechanical poisoning strategies. The project team separately maintains a much larger, human-curated claim corpus (6,591 claims across Snopes/PolitiFact/FactCheck.org, produced by a dedicated Mistral/Ollama pipeline with topic/risk/sensitivity classification and — for a large subset — already-generated LLM poisoned variants) that is **not yet ingested by any loader in this file**. See [`docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §7](CLAIM_AND_RESEARCH_QUESTIONS.md#7-data-assets-two-parallel-claim-pipelines) for the full picture and the open integration decision.
+**`ground_truth_label` and `include_verified_false` (added post-Sprint 5).** Every `Claim`/`Document` now carries an explicit `ground_truth_label` field (`"verified_true"` / `"verified_false"` / `None`), separate from `Document.doc_type` ("ground_truth"/"poisoned", EIGER's own manipulation-status axis) — see `eiger.core.models.GroundTruthLabel`'s docstring and `docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §7 for the full rationale (collapsing these two axes into one "clean" label was a real semantic mismatch between this codebase and the team's human-curated corpus). `AVeriTecDataset`/`PolitiFactDataset`/`FactCheckDataset.load()` all accept `include_verified_false: bool = False` — default unchanged (verified-true-only, exactly as before), opt-in `True` also returns the unambiguous false-end of each source's own rating (`"Refuted"`/`"false"`+`"pants-fire"`/`"false"`), tagged accordingly. Labels with no clear true/false meaning (LIAR's three middle-scale labels, AVeriTeC's "Not Enough Evidence"/"Conflicting Evidence") are never included either way. `SnopesDataset`'s cached `data/snopes/snopes_enriched.json` (2,928 claims) has been backfilled with `ground_truth_label: "verified_true"` (all of them passed the historical True-only filter); `scripts/enrich_snopes_claims.py --include-verified-false` exists to enrich the False side too, but has not yet been run against the full raw export (a further LLM pass, deferred pending compute — see Section 11) and has not had the same original_verdict contamination audit as the True side.
+
+**Note on a second, parallel claim source.** The four loaders above are the automated path from raw fact-checking exports to `Claim` objects, feeding `eiger.attacks`' own mechanical poisoning strategies. The project team separately maintains a much larger, human-curated claim corpus (5,672 rows in the final, non-blocked set, across Snopes/PolitiFact/FactCheck.org, produced by a dedicated Mistral/Ollama pipeline with topic/risk/sensitivity classification and — for every row — an already-generated LLM poisoned variant). This corpus is now ingestible via `CorpusClaimDataset` ("corpus_claim" — see Section 3a below), but **every row still has `requires_human_review = True`**, so `load()` returns zero claims unless the caller explicitly opts in with `include_unreviewed=True` (engineering use only, never for paper-facing results) — see [`docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §7](CLAIM_AND_RESEARCH_QUESTIONS.md#7-data-assets-two-parallel-claim-pipelines) for the full picture and the human-validation plan.
 
 ---
 
@@ -41,10 +43,11 @@ This is also what distinguishes EIBench's approach from benchmarks that sample n
 | Name | Language | Approx. Size | Domain | License | Status |
 |---|---|---|---|---|---|
 | Snopes | English | 4,832 verified-true claims (of 19,631 raw) | Multi-domain | Research use | **Implemented** (Sprint 3) |
-| AVeriTeC | English | 4,500 claims (Supported-label subset) | Multi-domain | CC BY 4.0 | **Implemented** (loader only — see Section 3; automated download() still pending) |
-| PolitiFact | English | 21,000+ claims (12,800 in base LIAR; "true"-label subset used) | US Politics | Research use | **Implemented** (loader only — see Section 4; automated download() still pending) |
+| AVeriTeC | English | 4,500 claims (Supported-label subset) | Multi-domain | CC BY 4.0 | **Implemented**, including automated `download()` — see Section 3 (unverified against a live network call) |
+| PolitiFact | English | 21,000+ claims (12,800 in base LIAR; "true"-label subset used) | US Politics | Research use | **Implemented**, including automated `download()` — see Section 4 (unverified against a live network call) |
 | FactCheck.org | English | ~3,000 claims ("true"-verdict subset used) | Multi-domain | Research use | **Implemented** (loader only — see Section 5; automated download() still pending) |
 | JSON Fixture | Italian (demo) | 1 claim | Economics | Internal | Implemented (Sprint 1) |
+| Corpus Claim (Mistral) | Multilingual | 5,672 claims, 0 human-reviewed today | Multi-domain | Private (project-internal) | **Implemented** (loader only — see Section 3a; `load()` returns 0 claims by default, ethical gate) |
 
 ---
 
@@ -56,28 +59,28 @@ AVeriTeC (Automated Verification of Textual Claims over Evidence) is a benchmark
 
 The dataset was introduced at NeurIPS 2023 and contains approximately 4,500 claims spanning politics, science, health, and economics. Evidence is linked to web sources, making the retrieval context realistic.
 
-**Status: `AVeriTecDataset` (registry name `"averitec"`) is implemented** — `eiger/datasets/averitec.py`, 26 unit tests (`tests/unit/test_averitec.py`). Only the `download()` step remains a manual/guard step rather than a real fetcher (see below); parsing, filtering, and `Claim` construction are fully implemented and tested.
+**Status: `AVeriTecDataset` (registry name `"averitec"`) is implemented** — `eiger/datasets/averitec.py`, 35 unit tests (`tests/unit/test_averitec.py`). `download()` now fetches automatically via the HuggingFace `datasets` library (see below), falling back to a guard-and-raise if the fetch fails; parsing, filtering, and `Claim` construction are fully implemented and tested. The fetcher itself is unit-tested against a mocked Hub client but has not yet been exercised against a live network call — verify it once against the real Hub before relying on it in a real experiment.
 
 Only `label == "Supported"` records are loaded, mirroring Snopes' `normalised_rating == True` filter: `Claim.original_fact` must be a verified TRUE statement (EIGER generates its own falsehoods via the attack registry, it does not import externally-sourced false claims as ground truth). Unlike Snopes, no LLM enrichment step is needed: each record's `evidence` list already contains real question/answer/url triples from AVeriTeC's own human annotators, so the loader uses the first evidence question directly as `Claim.context_query`. As with Snopes, claims are tagged `metadata["verified"] = False` until the research team independently spot-checks a sample.
 
 ### Download
 
-`AVeriTecDataset.download()` does **not** fetch the data automatically — it only *guards*: it no-ops if `*.jsonl` files already exist under the target directory, and otherwise raises a clear `IngestionError` pointing back to this section. Automated fetching would require adding the optional HuggingFace `datasets` library plus network access as a new runtime dependency, which is deliberately deferred (same rationale documented in `eiger/datasets/json_fixture.py` for why AVeriTeC wasn't the first loader built). Until then, download manually:
+`AVeriTecDataset.download()` fetches automatically: it no-ops if `*.jsonl` files already exist under the target directory; otherwise it attempts `datasets.load_dataset("chenxwh/AVeriTeC", split=...)` for each of `train`/`dev`/`test` and writes each split that succeeds to `<target_dir>/<split>.jsonl`, raising a clear `IngestionError` only if literally every split fails (e.g. no network, the `datasets` library isn't installed, or the Hub dataset ID has changed).
+
+**Install the optional dependency in an isolated virtual environment** — installing `datasets` was found, in this project's own verification pass, to silently upgrade `numpy` past this project's `numpy<2.0` pin via its `pandas` dependency, which is a real risk if done in a venv shared with another project (see `pyproject.toml`'s `data-import` extra for the full note):
 
 ```bash
-# Create the data directory
-mkdir -p data/averitec
-
-# Download via the Hugging Face datasets CLI
-pip install datasets
-python - <<'EOF'
-from datasets import load_dataset
-ds = load_dataset("chenxwh/AVeriTeC", split="test")
-ds.to_json("data/averitec/test.jsonl")
-EOF
+pip install 'eiger[data-import]'   # or: pip install datasets
 ```
 
-Alternatively, download directly from the AVeriTeC GitHub repository:
+```python
+from eiger.datasets import AVeriTecDataset
+AVeriTecDataset().download("data/averitec")
+```
+
+**Caveat**: this fetcher is unit-tested against a mocked Hub client but has not yet been exercised against a live network call (this project's own sandbox cannot reach huggingface.co). Run it once for real before relying on it, and report back if the Hub dataset ID or its split names have changed.
+
+If the automated fetch fails, download directly from the AVeriTeC GitHub repository instead:
 
 ```bash
 git clone https://github.com/Raldir/AVeriTeC.git /tmp/averitec_repo
@@ -116,13 +119,39 @@ from eiger.datasets import get_dataset
 # The AVeriTeC loader maps 'claim' -> Claim.original_fact
 # and uses the first evidence question as context_query.
 dataset = get_dataset("averitec")
-dataset.download(target_dir="data/averitec")  # guard: raises if files are missing
+dataset.download(target_dir="data/averitec")  # fetches automatically; raises only if every split fails
 claims = dataset.load(split="test", max_claims=100)
 
 print(f"Loaded {len(claims)} claims")
 print(f"Dataset content hash: {dataset.content_hash}")
 # Example: Loaded 100 claims
 # Dataset content hash: 3f8a1c2d9e4b7f0a
+```
+
+---
+
+## 3a. Corpus Claim (Mistral-generated, human-curated)
+
+### Description
+
+Unlike the four loaders above, this is not a public fact-checking export: it is a project-internal, human-curated claim corpus (`Corpus_claim_RAG_Mistral_output_v3.xlsx`, sheet `01_Corpus_claim`) built by a research collaborator's own Mistral/Ollama pipeline. 5,672 rows in the final set (of 21,804 raw candidates), spanning Snopes/PolitiFact/FactCheck.org source claims, each already annotated with `normalized_label` (`verified_true`/`verified_false` — mapped straight across to `Claim.ground_truth_label`), `risk_level` (1-5) and `sensitivity_class` (S0-S3, already this project's own scales), plus a full manipulation-provenance trail (`manipulation_type_applied`, `modified_claim`, `claim_change_description`, etc.) for a variant the collaborator's own pipeline already generated.
+
+`CorpusClaimDataset` ("corpus_claim") loads `claim_original` as `Claim.original_fact` — `modified_claim` and its provenance are carried into `Claim.metadata` for inspection only, not consumed as a poisoned Document: EIGER's own attack registry generates every experiment's poisoning mechanically and deterministically, the same way it does for every other loader in this file, so a single seed-derived mechanism produces every manipulated document regardless of which claim source is in use.
+
+**Every row currently has `requires_human_review = True`** (see `docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §7, point 4 — no human validation has happened yet). `load()` defaults to returning an empty list rather than silently treating unreviewed rows as usable; pass `include_unreviewed=True` for non-paper engineering work only. This mirrors this project's `excluded_from_benchmark`/`allow_non_benchmark_attacks` gating pattern (`eiger/attacks/README.md`) — an explicit opt-in, not a silent default. `sensitivity_class == "S3"` ("excluded", per `docs/ETHICS_AND_THREAT_MODEL.md` §5) is excluded unconditionally, the same way blocked rows are — no S3 rows exist in the file today, but the schema allows the value and this is the first loader to populate `sensitivity_class` from real external data, so the exclusion is enforced in code rather than assumed. A post-implementation review found and fixed several robustness gaps before this shipped (a blank spreadsheet row would otherwise become a claim with literal text `"None"`, a corrupt/non-`.xlsx` file raised an unhandled exception instead of `IngestionError`, and a malformed `risk_level`/`sensitivity_class` cell could abort loading every other valid row) — see the module's own docstring and test file for details.
+
+### Setup
+
+This is a private corpus with no automated download. Copy or symlink the workbook to `data/corpus_claim/Corpus_claim_RAG_Mistral_output_v3.xlsx`, or pass an explicit `path=...` to `CorpusClaimDataset()`.
+
+### Loading with EIGER
+
+```python
+from eiger.datasets import get_dataset
+
+dataset = get_dataset("corpus_claim")
+claims = dataset.load()  # [] today — nothing has passed human review yet
+claims = dataset.load(include_unreviewed=True)  # engineering-only, not paper-facing
 ```
 
 ---
@@ -135,11 +164,22 @@ PolitiFact is one of the largest publicly available fact-checking datasets, cove
 
 EIBench uses PolitiFact to study epistemic robustness in political discourse, a domain where misattribution and numerical shift attacks are particularly impactful.
 
-**Status: `PolitiFactDataset` (registry name `"politifact"`) is implemented** — `eiger/datasets/politifact.py`, 25 unit tests (`tests/unit/test_politifact.py`). As with AVeriTeC, only `download()` remains a manual/guard step rather than a real fetcher.
+**Status: `PolitiFactDataset` (registry name `"politifact"`) is implemented** — `eiger/datasets/politifact.py`, 34 unit tests (`tests/unit/test_politifact.py`). Like AVeriTeC, `download()` now fetches automatically (see below), falling back to a guard-and-raise if the fetch fails.
 
 Only `label == "true"` records are loaded — the strictest of the six ratings, and the same verified-true-only philosophy as Snopes/AVeriTeC (see Section 1's Overview): `Claim.original_fact` must be a verified TRUE statement, since EIGER generates its own falsehoods via the attack registry rather than importing externally-sourced false claims as ground truth. **Correction:** an earlier draft of this section's "Loading with EIGER" example suggested filtering to `label in {"false", "pants-fire"}` "for use as adversarial ground truth" — that contradicted the philosophy actually implemented here and in every other loader, and has been corrected below. LIAR has no evidence Q&A pairs (unlike AVeriTeC) and no natural-language question at all (like raw Snopes), so `context_query` is a simple templated fallback (`"Is it true that {statement}?"`) — no LLM enrichment step required, though a future `scripts/enrich_politifact_claims.py` (mirroring `scripts/enrich_snopes_claims.py`) could improve its quality later.
 
 ### Download
+
+`PolitiFactDataset.download()` fetches automatically: it no-ops if `*.tsv` files already exist under the target directory; otherwise it downloads `liar_dataset.zip` via stdlib `urllib` (no new dependency) and extracts every `*.tsv` member into the target directory (flattened to just its filename, in case the archive nests them under a subdirectory), raising a clear `IngestionError` if the download or extraction fails.
+
+```python
+from eiger.datasets import PolitiFactDataset
+PolitiFactDataset().download("data/politifact")
+```
+
+**Caveat**: this fetcher is unit-tested against a mocked HTTP response but has not yet been exercised against a live network call. Run it once for real before relying on it — and if you hit `SSLCertVerificationError` on macOS with a python.org-installed Python, that's a local certificate-bundle issue, not a bug: run that Python version's own "Install Certificates.command", or set `SSL_CERT_FILE` to `certifi.where()`.
+
+If the automated fetch fails, download manually instead:
 
 ```bash
 mkdir -p data/politifact
@@ -186,7 +226,7 @@ Field mapping to `Claim`:
 from eiger.datasets import get_dataset
 
 dataset = get_dataset("politifact")
-dataset.download(target_dir="data/politifact")  # guard: raises if files are missing
+dataset.download(target_dir="data/politifact")  # fetches and extracts liar_dataset.zip automatically
 
 # Only the verified 'true'-label subset is returned — see the Description
 # above for why this differs from an earlier (incorrect) draft of this
@@ -202,7 +242,7 @@ claims = dataset.load(split="test", max_claims=200)
 
 FactCheck.org is a non-partisan US fact-checking organization. Their public corpus covers political and scientific claims with detailed rebuttals, primary source citations, and structured verdicts. The corpus is smaller than PolitiFact but has higher editorial depth per claim, making it useful for studying complex multi-hop poisoning scenarios.
 
-**Status: `FactCheckDataset` (registry name `"factcheck_org"`) is implemented** — `eiger/datasets/factcheck.py`, 25 unit tests (`tests/unit/test_factcheck.py`). As with AVeriTeC/PolitiFact, only `download()` remains a manual/guard step.
+**Status: `FactCheckDataset` (registry name `"factcheck_org"`) is implemented** — `eiger/datasets/factcheck.py`, 25 unit tests (`tests/unit/test_factcheck.py`). Unlike AVeriTeC/PolitiFact (which gained real fetchers — see Sections 3-4), `download()` here deliberately remains a manual/guard step: this class's own module docstring already flags the CheckThat! archive's internal JSONL path/format as unverified, and automating a fetch on top of an unconfirmed layout would be guessing rather than engineering.
 
 Only `verdict == "true"` records are loaded, matching every other loader's verified-true-only philosophy (Section 1's Overview): `Claim.original_fact` must be a verified TRUE statement. Like PolitiFact, there is no evidence Q&A documented for this source, so `context_query` is a templated fallback (`"Is it true that {claim}?"`) — no LLM enrichment required.
 
@@ -544,11 +584,12 @@ print(f"Content hash: {ds.content_hash}")
 |---|---|---|
 | JSON Fixture (1 claim, Italian) | Sprint 1 | **Implemented.** `JSONFixtureDataset` + the `eiger.datasets` registry. Used for all unit and integration tests. |
 | Snopes (English, up to 4,832 in the raw export; 3,400 enriched so far, 2,928 confirmed verified-true after Sprint 4 contamination cleanup) | Sprint 3 | **Implemented.** `SnopesDataset` + `scripts/enrich_snopes_claims.py` (filter/dedupe/LLM-generated context_query). Not yet independently reviewed by the research team — see Section 8. |
-| AVeriTeC (English, ~4,500 claims, Supported-label subset) | Sprint 2 | **Implemented (loader only).** `AVeriTecDataset` — parsing/filtering/`Claim` construction fully implemented and unit-tested (Section 3). `download()` is a guard, not a fetcher: automated fetching (the optional HuggingFace `datasets` library + network access) and DVC tracking are still outstanding. Not yet independently reviewed by the research team. |
-| PolitiFact via LIAR (English, ~12,800 claims, "true"-label subset) | Sprint 3 | **Implemented (loader only).** `PolitiFactDataset` — parsing/filtering/`Claim` construction fully implemented and unit-tested (Section 4). `download()` is a guard, not a fetcher. Not yet independently reviewed. Note: the team also has a bulk PolitiFact export on hand (`politifact_true.csv`/`politifact_false.csv`, id/claim/date only, no source URL) — not used by this loader, which targets the standard LIAR TSV format instead; the team's export remains a lower-priority alternative source due to the missing per-row source link and minor non-English contamination in the false subset. |
-| FactCheck.org via CheckThat! (English, ~3,000 claims, "true"-verdict subset) | Sprint 4 | **Implemented (loader only).** `FactCheckDataset` — parsing/filtering/`Claim` construction fully implemented and unit-tested (Section 5). `download()` is a guard, not a fetcher. Raw file format (assumed JSONL) not independently re-verified — see Section 5's format caveat. Not yet independently reviewed. Note: the team also has a 50-row bulk-extracted `factcheck_false.csv`, every row explicitly flagged `needs_manual_check: True` — candidate FALSE claims requiring manual review, not a source of `Claim.original_fact` ground truth, and not used by this loader. |
-| Multi-lingual extension (Italian, French, German) | Sprint 5 | Planned. Cross-lingual epistemic robustness. |
-| Mistral/Ollama v3 corpus integration (6,591 claims, topic/risk/sensitivity-tagged, partially LLM-poisoned already) | Sprint 4/5 | Planned, pending a team decision on loader-vs-attack framing. See `docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §7. |
+| AVeriTeC (English, ~4,500 claims, Supported-label subset) | Sprint 2 | **Implemented, including automated `download()`.** `AVeriTecDataset` — parsing/filtering/`Claim` construction fully implemented and unit-tested (Section 3). `download()` now fetches all three splits via HuggingFace `datasets.load_dataset("chenxwh/AVeriTeC", ...)` (falls back to the existing guard-and-raise behavior if the fetch fails); DVC tracking is still outstanding. Written and unit-tested against a mocked Hub client. **Real-world verification attempted, not completed**: installing the required `datasets` package into a real dev venv was found to silently upgrade `numpy` to 2.x (violating this project's own `numpy<2.0` pin) via its `pandas` dependency — a real risk if that venv is shared with any other project (this happened during this project's own verification pass, in a venv also used by an unrelated Flower/federated-learning experiment, and was caught and reverted before the network call itself was reached). **Install this extra in an isolated virtual environment only** (see the warning now in `pyproject.toml`'s `data-import` group), and re-attempt the live-network verification from there. |
+| PolitiFact via LIAR (English, ~12,800 claims, "true"-label subset) | Sprint 3 | **Implemented, including automated `download()`.** `PolitiFactDataset` — parsing/filtering/`Claim` construction fully implemented and unit-tested (Section 4). `download()` now fetches and extracts `liar_dataset.zip` via stdlib `urllib`/`zipfile` (no new dependency, so no risk of the numpy conflict above). Written and unit-tested against a mocked HTTP response. **Real-world verification attempted, not completed**: hit a local `SSLCertVerificationError` on macOS running Python 3.14 installed from python.org (that distribution doesn't register the system CA bundle by default — a known, actionable, non-code issue: run that Python version's own "Install Certificates.command", or set `SSL_CERT_FILE` to `certifi.where()`) before the network call itself could be confirmed working. Note: the team also has a bulk PolitiFact export on hand (`politifact_true.csv`/`politifact_false.csv`, id/claim/date only, no source URL) — not used by this loader, which targets the standard LIAR TSV format instead; the team's export remains a lower-priority alternative source due to the missing per-row source link and minor non-English contamination in the false subset. |
+| FactCheck.org via CheckThat! (English, ~3,000 claims, "true"-verdict subset) | Sprint 4 | **Implemented (loader only); `download()` deliberately still a guard, not a fetcher.** `FactCheckDataset` — parsing/filtering/`Claim` construction fully implemented and unit-tested (Section 5). Unlike AVeriTeC/PolitiFact above, this loader's own module docstring already flags the CheckThat! archive's internal JSONL path/format as "assumed", never independently re-verified — writing an automated fetcher on top of an unconfirmed internal layout would be guessing, so this was scoped out rather than built on sand. Verifying the archive's real structure (needs network access) is the prerequisite before a fetcher can be written here. Not yet independently reviewed. Note: the team also has a 50-row bulk-extracted `factcheck_false.csv`, every row explicitly flagged `needs_manual_check: True` — candidate FALSE claims requiring manual review, not a source of `Claim.original_fact` ground truth, and not used by this loader. |
+| Corpus Claim / Mistral (Multilingual, 5,672 rows final, 21,804 raw) | Post-Sprint-5 | **Implemented (loader only).** `CorpusClaimDataset` — parsing/mapping/`Claim` construction fully implemented and unit-tested (Section 3a). `load()` returns 0 claims by default: 100% of rows still have `requires_human_review=True` — see `docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §7 for the stratified human-validation plan that will actually lower that count. `download()` is a guard only (private corpus, no automated fetch). |
+| Multi-lingual extension (Italian, French, German) | Sprint 5 | **Scoped.** Investigated against the real corpus_claim data: only 17/5,672 rows (0.3%) are genuinely non-English (Spanish, via a PolitiFact source); 19 more rows are mistagged (language-ID false positives on short English strings) — no genuine IT/FR/DE claim content exists in the corpus today. Found and fixed a real bug where `original_language_iso` was silently dropped at load time. Found and documented (not yet fixed) that `CausalManipulationAttack`/`MissingContextAttack` assume English text — see `docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §7 for the full analysis and the open decision for the research team. |
+| Mistral/Ollama v3 corpus integration (6,591 claims, topic/risk/sensitivity-tagged, partially LLM-poisoned already) | Sprint 4/5 | **Done.** Loader-vs-attack framing resolved: ingested via `CorpusClaimDataset` (loader only); the collaborator's own `modified_claim`/poisoning provenance stays in `Claim.metadata` for inspection, never consumed as EIGER poisoning — EIGER's own attack registry still generates every experiment's poisoning mechanically. See `docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §7. |
 
 Note: the "Sprint" column above is this document's own dataset-specific roadmap numbering, established during Sprint 1 planning, and does not necessarily align 1:1 with the project's actual sprint cadence (e.g. the retrieval/generation/orchestration layer built in the project's own "Sprint 2" did not touch datasets at all). The `eiger.datasets` registry and `JSONFixtureDataset` described in Sections 6-7, `SnopesDataset` described in Section 8, `AVeriTecDataset` described in Section 3, `PolitiFactDataset` described in Section 4, and `FactCheckDataset` described in Section 5 were all implemented during the project's Sprint 3. All five datasets originally planned in this roadmap now have implemented loaders; multi-lingual extension (Sprint 5) is the only remaining planned item.
 

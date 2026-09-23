@@ -119,7 +119,12 @@ def run_pipeline(top_k: int = 3, poison_rate: float = 0.5, seed: int = 42) -> No
         (NumericalShiftAttack(), AttackConfig(name="numerical_shift", poison_rate=poison_rate)),
         (AttributionSwitchAttack(), AttackConfig(name="attribution_switch", poison_rate=poison_rate)),
     ]
-    builder = CorpusBuilder(attacks=attacks, seed=seed)
+    # attribution_switch (M03) is excluded_from_benchmark — see
+    # eiger/attacks/attribution.py's docstring: it's absent from the EIB
+    # paper's published corpus for stated ethical/reputational reasons.
+    # This quickstart script is an engineering demo, not a paper-facing
+    # experiment, so the explicit opt-in is appropriate here.
+    builder = CorpusBuilder(attacks=attacks, seed=seed, allow_non_benchmark_attacks=True)
     corpus = builder.build(claims)
 
     log.info(

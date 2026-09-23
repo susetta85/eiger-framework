@@ -285,6 +285,10 @@ class DenseRetriever(BaseRetriever):
         # a KeyError.
         sensitivity_class = payload.get("sensitivity_class")
         risk_level = payload.get("risk_level")
+        # Same graceful-degradation rationale as sensitivity_class/risk_level
+        # above (post-Sprint-5 addition): a payload written before this
+        # field existed just yields None ("not carried"), not a KeyError.
+        ground_truth_label = payload.get("ground_truth_label")
 
         if payload.get("doc_type") == "poisoned" and "attack_name" in payload:
             annotation_data = payload.get("annotation")
@@ -298,6 +302,7 @@ class DenseRetriever(BaseRetriever):
                 annotation=PoisonAnnotation(**annotation_data) if annotation_data else None,
                 sensitivity_class=sensitivity_class,
                 risk_level=risk_level,
+                ground_truth_label=ground_truth_label,
             )
         return Document(
             doc_id=payload["doc_id"],
@@ -306,6 +311,7 @@ class DenseRetriever(BaseRetriever):
             doc_type=payload["doc_type"],
             sensitivity_class=sensitivity_class,
             risk_level=risk_level,
+            ground_truth_label=ground_truth_label,
         )
 
     @staticmethod

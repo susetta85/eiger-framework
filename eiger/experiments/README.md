@@ -38,10 +38,14 @@ constructing matching objects and injecting them. This mirrors the DI pattern
 already used by `DenseRetriever`/`SparseRetriever` and `IngestionPipeline`, and keeps
 `ExperimentRunner` trivially testable with mocks.
 
-**No dataset loader yet.** `run()` accepts an already-loaded `list[Claim]`
-directly rather than a dataset name — `eiger/datasets/` is still empty (see
-`eiger/ingestion/README.md`). Wiring in a `BaseDataset` loader later only
-changes the caller, not `ExperimentRunner` itself.
+**Dataset loading stays outside `ExperimentRunner`.** `run()` accepts an
+already-loaded `list[Claim]` directly rather than a dataset name.
+`eiger/datasets/` now provides five real loaders (`SnopesDataset`,
+`AVeriTecDataset`, `PolitiFactDataset`, `FactCheckDataset`, plus the local
+JSON fixture — see `docs/DATASETS.md`), but resolving `ExperimentConfig.dataset`
+into a `list[Claim]` is the CLI's job (`eiger/__main__.py`), not
+`ExperimentRunner`'s — this keeps the runner trivially testable with an
+in-memory claim list regardless of which dataset backs a given run.
 
 ---
 
@@ -52,6 +56,8 @@ list[Claim]
     │
     ▼  seed_everything(config.seed)                — reproducibility
     ▼  CorpusBuilder.build(claims)                  — attacks resolved via get_attack()
+    ▼    (raises ConfigurationError if any attack has excluded_from_benchmark=True
+    ▼     and config.allow_non_benchmark_attacks is not True — see eiger/attacks/README.md)
 CorpusBuilderResult
     │
     ▼  retriever.type == "dense": IngestionPipeline.ingest(corpus) — embed + upsert

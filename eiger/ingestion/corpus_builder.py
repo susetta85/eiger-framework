@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Sequence
 
+from eiger.core.exceptions import ConfigurationError
 from eiger.core.interfaces import BaseAttack
 from eiger.core.models import Claim, Document, PoisonedDocument, AttackConfig
 from eiger.utils.logging import get_logger
@@ -38,11 +39,48 @@ class CorpusBuilder:
     Each claim generates exactly one ground-truth document.
     For each attack in the attack list, it is applied to each claim
     according to the configured poison_rate.
+
+    Args:
+        attacks: Resolved (BaseAttack instance, AttackConfig) pairs.
+        seed:    Experiment-level seed for reproducible per-(claim, attack)
+                 poisoning decisions.
+        allow_non_benchmark_attacks: Must be True to include any attack
+                 whose ``excluded_from_benchmark`` class attribute is True
+                 (currently ``AttributionSwitchAttack``/M03 and
+                 ``CherryPickingAttack``/M05 — see their own docstrings).
+                 Both manipulation categories are explicitly absent from the
+                 EIB paper's published corpus (Corpus_claim_RAG_Mistral_
+                 output_v3.xlsx) for ethical/reputational reasons stated in
+                 the paper itself. Defaults to False so a paper-facing
+                 experiment can never silently include a manipulation
+                 category the ethical protocol excluded — the constructor
+                 raises ``ConfigurationError`` immediately if a flagged
+                 attack is present without this override, rather than
+                 letting it run and discovering the mismatch only when
+                 someone reads the results later.
     """
 
-    def __init__(self, attacks: list[tuple[BaseAttack, AttackConfig]], seed: int = 42) -> None:
+    def __init__(
+        self,
+        attacks: list[tuple[BaseAttack, AttackConfig]],
+        seed: int = 42,
+        allow_non_benchmark_attacks: bool = False,
+    ) -> None:
+        if not allow_non_benchmark_attacks:
+            gated = [attack.name for attack, _ in attacks if attack.excluded_from_benchmark]
+            if gated:
+                raise ConfigurationError(
+                    f"Attack(s) {gated} are excluded from the EIB paper's published "
+                    "benchmark corpus (Corpus_claim_RAG_Mistral_output_v3.xlsx) for "
+                    "ethical/reputational reasons documented in the paper itself "
+                    "(see each attack's own docstring). Pass "
+                    "allow_non_benchmark_attacks=True to CorpusBuilder if you are "
+                    "intentionally running a non-benchmark engineering ablation, "
+                    "not producing results reported as part of the EIB benchmark."
+                )
         self.attacks = attacks
         self.seed = seed
+        self.allow_non_benchmark_attacks = allow_non_benchmark_attacks
 
     def build(self, claims: list[Claim]) -> CorpusBuilderResult:
         """
@@ -73,6 +111,10 @@ class CorpusBuilder:
                 # never silently promoted to "safe".
                 sensitivity_class=claim.sensitivity_class,
                 risk_level=claim.risk_level,
+                # Source dataset's own true/false rating — independent of
+                # doc_type above, which is EIGER's manipulation_status.
+                # See eiger.core.models.GroundTruthLabel.
+                ground_truth_label=claim.ground_truth_label,
             )
             result.ground_truth_docs.append(gt_doc)
 

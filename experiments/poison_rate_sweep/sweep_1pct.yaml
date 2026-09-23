@@ -5,6 +5,17 @@
 # multi-attack structure but swept across rate instead of held at 0.3.
 #
 # Run with: make run CFG=experiments/poison_rate_sweep/sweep_1pct.yaml
+#
+# ENGINEERING SWEEP, NOT EIB PAPER RESULTS: this uses EIGER's own synthetic
+# Snopes dataset (data/snopes/snopes_enriched.json), not the EIB paper's
+# published benchmark corpus (Corpus_claim_RAG_Mistral_output_v3.xlsx,
+# still pending ingestion — see docs/CLAIM_AND_RESEARCH_QUESTIONS.md §7).
+# It also includes attribution_switch (M03) and cherry_picking (M05),
+# both explicitly absent from that published corpus for ethical/
+# reputational reasons stated in the paper itself — hence
+# allow_non_benchmark_attacks: true below. Do not report these numbers as
+# EIB benchmark results without re-running against the real corpus with
+# M03/M05 removed.
 
 experiment_id: poison_sweep_1pct
 description: "Poison-rate sweep point 2/5: poison_rate=0.01 (1%), all 6 attacks"
@@ -15,6 +26,8 @@ dataset:
   path: null       # uses SnopesDataset's default: data/snopes/snopes_enriched.json
   split: test
   max_claims: 100
+
+allow_non_benchmark_attacks: true  # includes M03/M05 — see note above
 
 attacks:
   - name: numerical_shift

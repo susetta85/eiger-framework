@@ -58,6 +58,25 @@ dev = [
 # core runtime dependency: running experiments never touches .xlsx files.
 data-import = [
     "openpyxl>=3.1.0,<4.0",
+    # Required by AVeriTecDataset.download() (eiger/datasets/averitec.py).
+    # PolitiFactDataset's/FactCheckDataset's own download() use only the
+    # stdlib urllib/zipfile, so they need no extra entry here.
+    #
+    # CONFIRMED REAL CONFLICT (found running `pip install datasets` in a
+    # real dev venv, not hypothetical): on Python 3.14, `datasets` 5.0.1
+    # pulls in `pandas` 3.0.6, which itself requires `numpy>=2.3.3` —
+    # directly violating this project's own `numpy<2.0,>=1.26.0` pin
+    # (eiger/core's own numerical code is only tested against numpy 1.x).
+    # `pip install` will silently upgrade numpy to 2.x to satisfy pandas
+    # unless numpy is re-pinned immediately afterward. This is a real risk
+    # if this venv is shared with any other project pinned to numpy<2.0
+    # (this exact scenario happened during this project's own verification
+    # pass and nearly affected a concurrent, unrelated Flower/federated-
+    # learning experiment sharing the same venv). Install this extra in an
+    # isolated virtual environment, never directly into a shared one, and
+    # re-run `pip install "numpy>=1.26.0,<2.0"` immediately afterward if it
+    # does get installed into a shared venv by mistake.
+    "datasets>=2.14.0",
 ]
 # RAGASFaithfulnessScorer (eiger/metrics/ragas_scorer.py, Sprint 5) — a real,
 # LLM-judge-based faithfulness_scorer, opt-in via

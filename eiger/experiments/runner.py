@@ -372,11 +372,21 @@ class ExperimentRunner:
         Raises:
             AttackNotFoundError: If any config.attacks entry names an
                                   unregistered attack.
+            ConfigurationError:  If config.attacks includes an attack flagged
+                                  excluded_from_benchmark (currently
+                                  AttributionSwitchAttack/M03,
+                                  CherryPickingAttack/M05 — see
+                                  CorpusBuilder's own docstring) and
+                                  config.allow_non_benchmark_attacks is False.
         """
         # get_attack() instantiates a fresh attack object per call, matching
         # CorpusBuilder's expected list[tuple[BaseAttack, AttackConfig]].
         attacks = [(get_attack(attack_cfg.name), attack_cfg) for attack_cfg in self.config.attacks]
-        return CorpusBuilder(attacks=attacks, seed=self.config.seed).build(claims)
+        return CorpusBuilder(
+            attacks=attacks,
+            seed=self.config.seed,
+            allow_non_benchmark_attacks=self.config.allow_non_benchmark_attacks,
+        ).build(claims)
 
     # ─── Internal helpers — per-claim retrieval & generation ──────────────────
 

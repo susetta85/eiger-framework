@@ -201,9 +201,11 @@ class TestNumericalShiftAttack:
         """
         base_doc.sensitivity_class = "S1"
         base_doc.risk_level = 3
+        base_doc.ground_truth_label = "verified_false"
         result = NumericalShiftAttack().apply(base_doc, seed=SEED)
         assert result.sensitivity_class == "S1"
         assert result.risk_level == 3
+        assert result.ground_truth_label == "verified_false"
 
 
 # ─── AttributionSwitchAttack ──────────────────────────────────────────────────
@@ -286,9 +288,11 @@ class TestAttributionSwitchAttack:
         """
         base_doc.sensitivity_class = "S1"
         base_doc.risk_level = 3
+        base_doc.ground_truth_label = "verified_false"
         result = AttributionSwitchAttack().apply(base_doc, seed=SEED)
         assert result.sensitivity_class == "S1"
         assert result.risk_level == 3
+        assert result.ground_truth_label == "verified_false"
 
 
 # ─── DateManipulationAttack ───────────────────────────────────────────────────
@@ -374,9 +378,11 @@ class TestDateManipulationAttack:
         """
         base_doc.sensitivity_class = "S1"
         base_doc.risk_level = 3
+        base_doc.ground_truth_label = "verified_false"
         result = DateManipulationAttack().apply(base_doc, seed=SEED)
         assert result.sensitivity_class == "S1"
         assert result.risk_level == 3
+        assert result.ground_truth_label == "verified_false"
 
 # ─── CausalManipulationAttack ─────────────────────────────────────────────────
 
@@ -456,9 +462,11 @@ class TestCausalManipulationAttack:
         """
         base_doc.sensitivity_class = "S1"
         base_doc.risk_level = 3
+        base_doc.ground_truth_label = "verified_false"
         result = CausalManipulationAttack().apply(base_doc, seed=SEED)
         assert result.sensitivity_class == "S1"
         assert result.risk_level == 3
+        assert result.ground_truth_label == "verified_false"
 
 
 # ─── CherryPickingAttack ───────────────────────────────────────────────────────
@@ -600,9 +608,11 @@ class TestCherryPickingAttack:
     def test_sensitivity_classification_propagates_to_poisoned_doc(self, baseline_doc: Document) -> None:
         baseline_doc.sensitivity_class = "S1"
         baseline_doc.risk_level = 3
+        baseline_doc.ground_truth_label = "verified_false"
         result = CherryPickingAttack().apply(baseline_doc, seed=SEED)
         assert result.sensitivity_class == "S1"
         assert result.risk_level == 3
+        assert result.ground_truth_label == "verified_false"
 
 
 # ─── MissingContextAttack ──────────────────────────────────────────────────────
@@ -667,9 +677,11 @@ class TestMissingContextAttack:
     def test_sensitivity_classification_propagates_to_poisoned_doc(self, context_doc: Document) -> None:
         context_doc.sensitivity_class = "S2"
         context_doc.risk_level = 5
+        context_doc.ground_truth_label = "verified_false"
         result = MissingContextAttack().apply(context_doc, seed=SEED)
         assert result.sensitivity_class == "S2"
         assert result.risk_level == 5
+        assert result.ground_truth_label == "verified_false"
 
 
 # ─── _split_sentences (decimal-point-aware sentence splitting) ────────────────

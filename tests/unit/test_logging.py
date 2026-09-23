@@ -110,3 +110,39 @@ class TestGetLogger:
         """
         log = get_logger(__name__)
         assert log is not None
+
+
+class TestConfiguredLoggerActuallyLogs:
+    """
+    Regression tests for a real bug: configure_logging() completing without
+    raising, and get_logger() returning a non-None object, are NOT enough to
+    guarantee a subsequent log call actually works. A prior version of
+    configure_logging() used `structlog.PrintLoggerFactory()` together with
+    the `structlog.stdlib.add_logger_name` processor — PrintLogger has no
+    `.name` attribute, so every real `log.info()`/`log.warning()` call after
+    configure_logging() raised AttributeError unconditionally. None of the
+    tests above caught this because they never emit a log line through the
+    fully configured pipeline in the same test. These tests close that gap
+    by calling configure_logging() and then actually invoking every level a
+    real caller would use, exactly as pipeline_eibench.py and the CLI do.
+    """
+
+    def test_info_call_after_configure_does_not_raise(self) -> None:
+        configure_logging("INFO")
+        log = get_logger(__name__)
+        log.info("pilot.claims_loaded", n_claims=30)  # must not raise
+
+    def test_warning_call_after_configure_does_not_raise(self) -> None:
+        configure_logging("INFO")
+        log = get_logger(__name__)
+        log.warning("some.warning", detail="x")  # must not raise
+
+    def test_error_call_after_configure_does_not_raise(self) -> None:
+        configure_logging("INFO")
+        log = get_logger(__name__)
+        log.error("some.error", detail="x")  # must not raise
+
+    def test_debug_call_after_configure_at_debug_level_does_not_raise(self) -> None:
+        configure_logging("DEBUG")
+        log = get_logger(__name__)
+        log.debug("some.debug", detail="x")  # must not raise

@@ -77,6 +77,11 @@ _DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "factcheck"
 # Only this verdict is treated as a verified-true ground-truth claim —
 # see the module docstring's note on the project-wide filter philosophy.
 _VERIFIED_TRUE_VERDICT = "true"
+# The unambiguous opposite verdict, kept only when include_verified_false=
+# True (see load()). The documented field table does not enumerate every
+# possible verdict string the CheckThat! mirror may contain, so any verdict
+# other than these two is never included either way.
+_VERIFIED_FALSE_VERDICT = "false"
 
 
 class FactCheckDataset(BaseDataset):
@@ -155,6 +160,17 @@ class FactCheckDataset(BaseDataset):
             log.debug("factcheck.download_noop_already_present", target_dir=target_dir)
             return
         log.debug("factcheck.download_missing", target_dir=target_dir)
+        # Deliberately still a guard, not a fetcher (unlike AVeriTecDataset/
+        # PolitiFactDataset, both of which gained a real download() in the
+        # same pass this comment was added). This class's own module
+        # docstring already flags that the CheckThat! archive's internal
+        # JSONL path/format is "assumed", not independently re-verified —
+        # writing an automated unzip-and-locate-the-file fetcher on top of
+        # an unverified internal path would be guessing at structure no one
+        # has actually confirmed, which is worse than an honest guard that
+        # fails loudly. Verify the archive's real internal layout first
+        # (requires network access this project's sandbox does not have),
+        # then implement the fetcher the same way as the other two loaders.
         raise IngestionError(
             f"No FactCheck.org '*.jsonl' split files found under "
             f"'{target_dir}'. Automated download is not implemented yet "
@@ -162,10 +178,16 @@ class FactCheckDataset(BaseDataset):
             "download steps (the CLEF CheckThat! lab mirror)."
         )
 
-    def load(self, split: str = "test", max_claims: int | None = None) -> list[Claim]:
+    def load(
+        self,
+        split: str = "test",
+        max_claims: int | None = None,
+        include_verified_false: bool = False,
+    ) -> list[Claim]:
         """
         Parse ``<data_dir>/<split>.jsonl`` and return Claim objects for
-        every ``verdict == "true"`` record, in file order.
+        every ``verdict == "true"`` record (plus ``"false"``-verdict
+        records if ``include_verified_false=True``), in file order.
 
         Args:
             split:      Selects ``<data_dir>/<split>.jsonl``.
@@ -173,30 +195,40 @@ class FactCheckDataset(BaseDataset):
                         the first N in file order after filtering (file
                         order is stable and deterministic — no re-sorting
                         is needed).
+            include_verified_false: Default False, preserving this loader's
+                        original behavior exactly (verified-true subset
+                        only). If True, also includes "false"-verdict
+                        records, tagged ``Claim.ground_truth_label =
+                        "verified_false"``. Any other verdict string is
+                        never included either way.
 
         Returns:
-            List of Claim objects for the verified-true subset.
+            List of Claim objects for the verified-true (and optionally
+            verified-false) subset.
 
         Raises:
             IngestionError: If the split file is missing, unreadable, has
-                            invalid JSON on any line, or a "true"-verdict
-                            record is missing a required field.
+                            invalid JSON on any line, or a kept record is
+                            missing a required field.
         """
         file_path = self.data_dir / f"{split}.jsonl"
         log.debug("factcheck.load_start", path=str(file_path), split=split)
         raw_items = self._read_jsonl(file_path)
 
+        kept_verdicts = {_VERIFIED_TRUE_VERDICT}
+        if include_verified_false:
+            kept_verdicts.add(_VERIFIED_FALSE_VERDICT)
+
         try:
             claims = [
                 self._to_claim(item)
                 for item in raw_items
-                if str(item.get("verdict", "")).strip().lower() == _VERIFIED_TRUE_VERDICT
+                if str(item.get("verdict", "")).strip().lower() in kept_verdicts
             ]
         except KeyError as exc:
             raise IngestionError(
-                f"FactCheck.org split file '{file_path}' has a "
-                f"'{_VERIFIED_TRUE_VERDICT}'-verdict record missing "
-                f"required field {exc}. Expected keys: claim_id, claim, verdict."
+                f"FactCheck.org split file '{file_path}' has a kept-verdict "
+                f"record missing required field {exc}. Expected keys: claim_id, claim, verdict."
             ) from exc
 
         if max_claims is not None:
@@ -258,6 +290,14 @@ class FactCheckDataset(BaseDataset):
         claim_text = item["claim"]
         context_query = f"Is it true that {claim_text}?"
 
+        verdict = str(item.get("verdict", "")).strip().lower()
+        if verdict == _VERIFIED_TRUE_VERDICT:
+            ground_truth_label = "verified_true"
+        elif verdict == _VERIFIED_FALSE_VERDICT:
+            ground_truth_label = "verified_false"
+        else:
+            ground_truth_label = None  # unreachable given load()'s filter, kept defensive
+
         metadata: dict[str, Any] = {
             "verdict": item.get("verdict", ""),
             "verified": False,
@@ -273,4 +313,5 @@ class FactCheckDataset(BaseDataset):
             context_query=context_query,
             source_dataset=self.name,
             metadata=metadata,
+            ground_truth_label=ground_truth_label,
         )

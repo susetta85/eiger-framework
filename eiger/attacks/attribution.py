@@ -89,10 +89,25 @@ class AttributionSwitchAttack(BaseAttack):
       byte-identical to the input. This is recorded via
       ``attack_params["no_op"]`` (Sprint 4 audit fix) rather than hidden.
 
-    EIBench taxonomy: Type 3.
+    EIBench taxonomy: Type 3 (M03 — False Attribution).
+
+    Excluded from the EIB paper's published benchmark corpus
+    ------------------------------------------------------------
+    The paper draft (Imperatrice & Putortì, "Epistemic Integrity Benchmark")
+    states that M03 was "excluded from automation because of its higher
+    reputational and dual-use risk" (§6.0.2) — the Mistral-generated corpus
+    (Corpus_claim_RAG_Mistral_output_v3.xlsx) contains zero M03 instances by
+    design, not by omission. This class still exists and is fully functional
+    for engineering validation/ablation purposes, but ``excluded_from_benchmark
+    = True`` makes ``CorpusBuilder`` refuse to run it unless the caller
+    explicitly opts in via ``allow_non_benchmark_attacks=True`` — see that
+    class's own docstring. Do not use this attack to produce results reported
+    as part of the EIB benchmark without first re-confirming with the
+    ethics/threat-model protocol that governs the published corpus.
     """
 
     name: str = "attribution_switch"
+    excluded_from_benchmark: bool = True
 
     description: str = (
         "Replaces authoritative source attributions (WHO, NASA, peer-reviewed journals) "
@@ -190,6 +205,7 @@ class AttributionSwitchAttack(BaseAttack):
             # less sensitive than its source.
             sensitivity_class=document.sensitivity_class,
             risk_level=document.risk_level,
+            ground_truth_label=document.ground_truth_label,
         )
 
     def describe(self) -> dict[str, Any]:

@@ -57,6 +57,13 @@ _DEFAULT_FIXTURE_PATH = Path(__file__).resolve().parents[2] / "eibench_raw_claim
 # pasted into the fixture without renaming anything (see _to_claim()).
 _OPTIONAL_PROVENANCE_FIELDS = ("source", "domain", "notes", "verified")
 
+# Valid values for the optional top-level "ground_truth_label" fixture key
+# (see Claim.ground_truth_label / eiger.core.models.GroundTruthLabel). Any
+# other value (including absent/None) is treated as "not carried by this
+# fixture entry" rather than raising, so older fixture entries and any
+# externally-produced file predating this field stay loadable unchanged.
+_VALID_GROUND_TRUTH_LABELS = {"verified_true", "verified_false"}
+
 
 class JSONFixtureDataset(BaseDataset):
     """
@@ -72,6 +79,7 @@ class JSONFixtureDataset(BaseDataset):
           "domain": str,    # optional — provenance, see below
           "notes": str,     # optional — provenance, see below
           "verified": bool, # optional — provenance, see below
+          "ground_truth_label": str,  # optional — "verified_true"/"verified_false"
         }
 
     Field mapping to Claim (see docs/DATASETS.md, section "JSON Fixture"):
@@ -220,10 +228,14 @@ class JSONFixtureDataset(BaseDataset):
             if provenance_field in item:
                 metadata[provenance_field] = item[provenance_field]
 
+        raw_label = item.get("ground_truth_label")
+        ground_truth_label = raw_label if raw_label in _VALID_GROUND_TRUTH_LABELS else None
+
         return Claim(
             claim_id=item["claim_id"],
             original_fact=item["original_fact"],
             context_query=item["context_query"],
             source_dataset=self.name,
             metadata=metadata,
+            ground_truth_label=ground_truth_label,
         )

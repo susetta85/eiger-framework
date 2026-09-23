@@ -8,6 +8,81 @@ quickstart scripts (`pipeline_eibench.py`, `epistemic.py`, `engine.py`).
 
 ---
 
+## `sample_corpus_claim_for_review.py` — stratified human-review sample
+
+Selects a stratified, reproducible sample from the real corpus
+(`Corpus_claim_RAG_Mistral_output_v3.xlsx`) and writes it out as an
+`.xlsx` workbook ready for a human fact-checker to review — the concrete
+tool proposed in the "EIGER x Corpus Claim - Protocollo di allineamento"
+alignment document, point 4 ("definire un campione di validazione").
+Every row in the corpus currently has `requires_human_review = True` (see
+`eiger/datasets/corpus_claim.py`); reviewing all 5,672 at once isn't
+realistic, so this produces a representative batch instead.
+
+```bash
+python scripts/sample_corpus_claim_for_review.py \
+    /path/to/Corpus_claim_RAG_Mistral_output_v3.xlsx \
+    -o review_batch_001.xlsx --sample-size 400 --min-per-stratum 20
+```
+
+Stratifies on `manipulation_type_applied` (M01/M02/M04/M06) x
+`sensitivity_class` (S1/S2), proportional allocation with a floor per
+stratum so small categories (e.g. M04/S1) aren't drowned out by large
+ones (e.g. M06/S2). Deterministic: the same `--seed` always produces the
+same sample (`eiger.utils.seeding`). Output columns include everything a
+reviewer needs (`claim_original`, `modified_claim`,
+`claim_change_description`, topic/subtopic, source URL) plus empty
+columns for her own judgment (`plausibility`, `editorial_risk`,
+`verification_difficulty`, `review_decision`, `reviewer_notes`) — see the
+script's own module docstring. It does **not** write back to the master
+workbook or flip `requires_human_review` anywhere; folding a completed
+review batch back into the corpus is a separate, deliberate step.
+
+---
+
+## `sample_for_faithfulness_calibration.py` / `compute_calibration_correlation.py` — scorer calibration
+
+Two-step tool to calibrate `EmbeddingFaithfulnessScorer`/`RAGASFaithfulnessScorer`
+against real human judgments — closing the biggest open scientific-validity
+gap flagged in `docs/ARCHITECTURE.md` Section 2 ("neither scorer has been
+calibrated against human judgments").
+
+**Step 1 — sample a batch for blind annotation** from any completed
+experiment's `results.json`:
+
+```bash
+python scripts/sample_for_faithfulness_calibration.py \
+    results/poison_rate_sweep/5pct/results.json \
+    -o calibration/batch_001.xlsx --sample-size 40 --seed 42
+```
+
+Stratifies on whether each record's retrieval contained a poisoned
+document, so the batch covers both clean and poisoned-context generations.
+Writes two files: the annotation workbook itself (query, ground-truth fact
+when its document was retrieved, retrieved context, generated answer, plus
+empty `faithfulness_human`/`correctness_human` 1-5 columns and
+`annotator_notes`) and a sibling `<output>.automated_scores.json` holding
+the scorer's own numbers — **the workbook never shows the automated score
+next to a record**, so the annotator's rating isn't anchored by the very
+number being evaluated. Don't open the `.automated_scores.json` file while
+annotating.
+
+**Step 2 — after a human has filled in `faithfulness_human`/
+`correctness_human`**, compute correlation against the automated scorer:
+
+```bash
+python scripts/compute_calibration_correlation.py calibration/batch_001.xlsx
+```
+
+Reports Pearson's r, Spearman's rho, and MAE for both faithfulness and
+answer-correctness (human 1-5 ratings rescaled to [0, 1] first). Rows left
+blank are skipped, not treated as 0. No pass/fail threshold is hard-coded —
+conventional weak/moderate/strong bands are printed for reference only;
+deciding what correlation is "good enough" for this project's purposes is
+the research team's call, not this script's.
+
+---
+
 ## `import_claims_xlsx.py` — claim collection intake
 
 Converts a filled-in copy of `eiger_claims_template.xlsx` (the spreadsheet

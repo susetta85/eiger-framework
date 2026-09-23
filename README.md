@@ -98,8 +98,8 @@ EIBench is a six-layer pipeline. Each layer is independently extensible via a pl
 | 7 | Dataset registry + `JSONFixtureDataset` loader | ✅ Sprint 3 |
 | 8 | `eiger` CLI (`run`/`list-datasets`/`list-attacks`/`list-metrics`) | ✅ Sprint 3 |
 | 9 | `SnopesDataset` (4,832 verified-true claims) + `scripts/enrich_snopes_claims.py` (filter/dedupe/LLM context_query) | ✅ Sprint 3 — not yet independently reviewed, see `docs/DATASETS.md` §8 |
-| 10 | `AVeriTecDataset` (Supported-label subset, evidence-question context_query — no LLM needed) | ✅ Sprint 3 — loader only, `download()` is a guard not a fetcher; not yet independently reviewed, see `docs/DATASETS.md` §3 |
-| 11 | `PolitiFactDataset` (LIAR "true"-label subset, templated context_query — no LLM needed) | ✅ Sprint 3 — loader only, `download()` is a guard not a fetcher; not yet independently reviewed, see `docs/DATASETS.md` §4 |
+| 10 | `AVeriTecDataset` (Supported-label subset, evidence-question context_query — no LLM needed) | ✅ Sprint 3 — `download()` now fetches via HuggingFace `datasets` (unverified against a live network call, see `docs/DATASETS.md` §3); not yet independently reviewed |
+| 11 | `PolitiFactDataset` (LIAR "true"-label subset, templated context_query — no LLM needed) | ✅ Sprint 3 — `download()` now fetches/extracts `liar_dataset.zip` via stdlib `urllib`/`zipfile` (unverified against a live network call, see `docs/DATASETS.md` §4); not yet independently reviewed |
 | 12 | `FactCheckDataset` (CheckThat! mirror, "true"-verdict subset, templated context_query — no LLM needed) | ✅ Sprint 3 — loader only, `download()` is a guard not a fetcher, raw format assumed JSONL (not independently verified); not yet independently reviewed, see `docs/DATASETS.md` §5 |
 | — | OpenAI LLM backend, degradation curves / HTML report | 🔄 Future sprints |
 | 16 | `RAGASFaithfulnessScorer` (real RAGAS via an Ollama LLM judge), opt-in via `faithfulness_scorer: "ragas"` | ✅ Sprint 5 — see `eiger/metrics/README.md` |
@@ -115,12 +115,14 @@ EIBench is a six-layer pipeline. Each layer is independently extensible via a pl
 |----|------|-------------|--------------|--------------|
 | `numerical_shift` | Numerical Shift | Swaps adjacent digits: `3.5%` → `35.%` | Type 1 | M01 |
 | `date_manipulation` | Date Manipulation | Shifts year references: `2024` → `2019` | Type 2 | M02 |
-| `attribution_switch` | Attribution Switch | Replaces sources: `WHO` → `a blog` | Type 3 | M03 |
+| `attribution_switch` | Attribution Switch | Replaces sources: `WHO` → `a blog` | Type 3 | M03 †excluded |
 | `causal_manipulation` | Causal Manipulation | Injects fabricated causal clauses | Type 4 | M04 |
-| `cherry_picking` | Cherry-Picking | Deletes a comparative baseline clause: `"4.1%, compared to 6.8% in 2020"` → `"4.1%"` | Type 5 | M05 |
+| `cherry_picking` | Cherry-Picking | Deletes a comparative baseline clause: `"4.1%, compared to 6.8% in 2020"` → `"4.1%"` | Type 5 | M05 †excluded |
 | `missing_context` | Missing Context | Deletes an entire qualifying/caveat sentence | Type 6 | M06 |
 
 All six implemented attacks: deterministic (seed-controlled), isolated (no global state mutation), extensible (plugin registry). `cherry_picking`/`missing_context` complete the project's M01–M06 manipulation taxonomy 1:1 (Sprint 4/5) — see [`docs/CLAIM_AND_RESEARCH_QUESTIONS.md` §5](docs/CLAIM_AND_RESEARCH_QUESTIONS.md#5-manipulation-taxonomy-m01m06).
+
+†**M03/M05 are excluded from the published EIB benchmark corpus by default** (0 rows for either in `Corpus_claim_RAG_Mistral_output_v3.xlsx`, for stated ethical/reputational reasons) and require an explicit `ExperimentConfig.allow_non_benchmark_attacks: true` opt-in to run — see `eiger/attacks/README.md`.
 
 ---
 
@@ -205,7 +207,7 @@ make ollama-pull
 **Via the CLI** (`eiger` console script, or `python -m eiger`):
 
 ```bash
-eiger list-datasets     # averitec, factcheck_org, json_fixture, politifact, snopes
+eiger list-datasets     # averitec, corpus_claim, factcheck_org, json_fixture, politifact, snopes
 eiger list-attacks      # numerical_shift, attribution_switch, date_manipulation, causal_manipulation, cherry_picking, missing_context
 eiger list-metrics      # ers, ffr, pcs, prd, prr, source_integrity
 
@@ -294,7 +296,7 @@ eiger-framework/
 │   └── utils/                # Logging, seeding, hashing
 │
 ├── tests/
-│   ├── unit/                 # Fast, no external services (485 tests, 100% coverage)
+│   ├── unit/                 # Fast, no external services (776 tests, 100% coverage)
 │   └── integration/          # Requires docker compose up
 │
 ├── experiments/              # YAML experiment definitions

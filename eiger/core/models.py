@@ -36,6 +36,18 @@ from pydantic import BaseModel, Field, SerializeAsAny, model_validator
 # share a single source of truth for the allowed values.
 SensitivityClass = Literal["S0", "S1", "S2", "S3"]
 
+# Ground-truth label per the SOURCE dataset's own rating — independent of
+# any experimental manipulation EIGER later applies. This is deliberately
+# a separate axis from Document.doc_type ("ground_truth"/"poisoned", i.e.
+# manipulation_status): a claim can be verified_false and still "clean"
+# (never touched by an attack), and a claim can be verified_true and
+# "poisoned" (the classic corpus-poisoning case this project studies).
+# See docs/CLAIM_AND_RESEARCH_QUESTIONS.md §7 and the alignment doc shared
+# with the corpus-claim collaborator for the full rationale — collapsing
+# these two axes into one "clean" label was the source of a real semantic
+# mismatch between the engineering and humanities sides of this project.
+GroundTruthLabel = Literal["verified_true", "verified_false"]
+
 
 # ─── Dataset layer ────────────────────────────────────────────────────────────
 
@@ -81,6 +93,19 @@ class Claim(BaseModel):
         description=(
             "1 (ordinary review) to 5 (critical) per docs/ETHICS_AND_THREAT_MODEL.md §5. "
             "None means not yet classified, not 'low risk'."
+        ),
+    )
+    # See GroundTruthLabel's own comment above: this is the source dataset's
+    # verified_true/verified_false rating, independent of manipulation_status
+    # (Document.doc_type). None means the source dataset does not carry this
+    # rating for this claim (e.g. the bundled JSON fixture), not "true".
+    ground_truth_label: GroundTruthLabel | None = Field(
+        default=None,
+        description=(
+            "verified_true or verified_false per the source dataset's own "
+            "rating, assigned before any experimental manipulation. "
+            "Distinct from Document.doc_type (clean/poisoned). None means "
+            "the source dataset does not carry this rating."
         ),
     )
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -150,6 +175,20 @@ class Document(BaseModel):
         description=(
             "1 (ordinary review) to 5 (critical) per docs/ETHICS_AND_THREAT_MODEL.md §5. "
             "None means not yet classified, not 'low risk'."
+        ),
+    )
+    # Propagated from the source Claim (see Claim.ground_truth_label and the
+    # GroundTruthLabel comment above). Deliberately independent of doc_type:
+    # doc_type ("ground_truth"/"poisoned") is EIGER's own manipulation_status,
+    # assigned when the corpus is built; ground_truth_label is the source
+    # dataset's own true/false rating, assigned before any manipulation. A
+    # verified_false claim with doc_type="ground_truth" is a legitimate
+    # "clean but naturally false" record, not a contradiction.
+    ground_truth_label: GroundTruthLabel | None = Field(
+        default=None,
+        description=(
+            "verified_true or verified_false, propagated from the source "
+            "Claim. Independent of doc_type (clean/poisoned)."
         ),
     )
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -421,6 +460,15 @@ class ExperimentConfig(BaseModel):
     )
     output_dir: str = Field(default="results/")
     description: str = Field(default="")
+    # False by default: CorpusBuilder refuses to run any attack whose
+    # excluded_from_benchmark class attribute is True (AttributionSwitchAttack
+    # /M03, CherryPickingAttack/M05 — see eiger/ingestion/corpus_builder.py
+    # and each attack's own docstring) unless this is explicitly set True.
+    # Both manipulation categories are absent from the EIB paper's published
+    # corpus for ethical/reputational reasons stated in the paper itself, so
+    # this stays False for any config that might feed paper-facing results —
+    # flip it only for a deliberate, clearly-labelled engineering ablation.
+    allow_non_benchmark_attacks: bool = Field(default=False)
 
     @property
     def config_hash(self) -> str:

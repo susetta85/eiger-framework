@@ -5,6 +5,10 @@
 # is sufficient") — this point tests right at that boundary.
 #
 # Run with: make run CFG=experiments/poison_rate_sweep/sweep_5pct.yaml
+#
+# ENGINEERING SWEEP, NOT EIB PAPER RESULTS — see sweep_1pct.yaml's note:
+# synthetic Snopes dataset, includes attribution_switch (M03) and
+# cherry_picking (M05), both absent from the published EIB corpus.
 
 experiment_id: poison_sweep_5pct
 description: "Poison-rate sweep point 4/5: poison_rate=0.05 (5%, working-hypothesis threshold), all 6 attacks"
@@ -15,6 +19,8 @@ dataset:
   path: null       # uses SnopesDataset's default: data/snopes/snopes_enriched.json
   split: test
   max_claims: 100
+
+allow_non_benchmark_attacks: true  # includes M03/M05 — see note above
 
 attacks:
   - name: numerical_shift

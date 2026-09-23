@@ -29,9 +29,19 @@ Currently registered datasets
     *.jsonl split files under data/factcheck/ — see eiger.datasets.factcheck
     and docs/DATASETS.md section 5 for manual download steps (automated
     download() is not yet implemented).
+  - CorpusClaimDataset ("corpus_claim") — the project's human-curated,
+    Mistral-generated claim corpus (5,672 rows, already labeled
+    verified_true/verified_false). requires_human_review is True for
+    every row today, so load() returns zero claims unless
+    include_unreviewed=True is passed explicitly (engineering use only)
+    — see eiger.datasets.corpus_claim and
+    docs/CLAIM_AND_RESEARCH_QUESTIONS.md §7. Requires the workbook to be
+    copied/symlinked to data/corpus_claim/ (no automated download — this
+    is not a public corpus).
 
-See docs/DATASETS.md for the full dataset roadmap. All five documented
-datasets now have implemented loaders.
+See docs/DATASETS.md for the full dataset roadmap. All five originally
+documented datasets, plus the human-curated corpus_claim loader, now have
+implemented loaders.
 
 Responsibilities of this module
 --------------------------------
@@ -55,6 +65,7 @@ What this module does NOT do
 
 # ─── Built-in dataset classes ────────────────────────────────────────────────
 from eiger.datasets.averitec import AVeriTecDataset
+from eiger.datasets.corpus_claim import CorpusClaimDataset
 from eiger.datasets.factcheck import FactCheckDataset
 from eiger.datasets.json_fixture import JSONFixtureDataset
 from eiger.datasets.politifact import PolitiFactDataset
@@ -73,6 +84,7 @@ register_dataset(SnopesDataset)
 register_dataset(AVeriTecDataset)
 register_dataset(PolitiFactDataset)
 register_dataset(FactCheckDataset)
+register_dataset(CorpusClaimDataset)
 
 # ─── Public API declaration ───────────────────────────────────────────────────
 
@@ -87,4 +99,5 @@ __all__ = [
     "AVeriTecDataset",
     "PolitiFactDataset",
     "FactCheckDataset",
+    "CorpusClaimDataset",
 ]

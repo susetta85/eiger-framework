@@ -166,18 +166,63 @@ def _read_raw_rows(path: Path) -> list[dict[str, Any]]:
 # scripts/clean_snopes_contamination.py.
 _VERIFIED_TRUE_ORIGINAL_VERDICTS = frozenset({"true", "correct attribution", "legit"})
 
+# The False-side equivalent of _VERIFIED_TRUE_ORIGINAL_VERDICTS above —
+# deliberately a narrow allowlist, not the inverse of it. A manual frequency
+# count of normalised_rating=False rows in the raw export (11,872 rows)
+# found original_verdict values ranging from unambiguous ("false": 7,821)
+# to clearly NOT a plain falsehood in EIGER's sense ("satire": 1,073 — not
+# a factual claim at all; "mixture": 431 — explicitly partially true;
+# "miscaptioned"/"misattributed"/"scam"/"legend"/"unproven": each a
+# different, more specific phenomenon than "this statement is false") to
+# outright contamination ("correct attribution": 43 rows — the exact same
+# string that means TRUE on the other side of this filter, appearing here
+# with normalised_rating=False; "no": 78 rows — already known from the
+# True-side audit to be a raw data-quality artifact, not a real rating).
+# Only "false" itself is unambiguous enough to trust without a further,
+# separate manual review — see this function's docstring and
+# docs/CLAIM_AND_RESEARCH_QUESTIONS.md §7 for the tracking item to revisit
+# the excluded categories later.
+_VERIFIED_FALSE_ORIGINAL_VERDICTS = frozenset({"false"})
+
 
 def _is_verdict_consistent_with_true(original_verdict: Any) -> bool:
     """Return True iff original_verdict corroborates a verified-true claim."""
     return str(original_verdict).strip().lower() in _VERIFIED_TRUE_ORIGINAL_VERDICTS
 
 
-def filter_and_dedupe(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _is_verdict_consistent_with_false(original_verdict: Any) -> bool:
+    """Return True iff original_verdict corroborates a verified-false claim."""
+    return str(original_verdict).strip().lower() in _VERIFIED_FALSE_ORIGINAL_VERDICTS
+
+
+def filter_and_dedupe(
+    rows: list[dict[str, Any]], *, include_verified_false: bool = False
+) -> list[dict[str, Any]]:
     """
-    Keep only rows where ``normalised_rating`` is exactly ``True`` and
+    Keep rows where ``normalised_rating`` is exactly ``True`` and
     ``original_verdict`` corroborates that (see
     ``_VERIFIED_TRUE_ORIGINAL_VERDICTS``), deduplicated by ``claim_id``
-    (first occurrence wins), preserving original file order.
+    (first occurrence wins), preserving original file order. When
+    ``include_verified_false=True``, the returned list is all verified-true
+    rows (in file order) followed by all verified-false rows (in file
+    order) — not a single file-order-preserving interleave — see "Dedup
+    priority" below for why.
+
+    If ``include_verified_false=True``, also keeps rows where
+    ``normalised_rating`` is exactly ``False`` AND ``original_verdict``
+    corroborates that (see ``_VERIFIED_FALSE_ORIGINAL_VERDICTS`` — a
+    narrow allowlist, not simply "not true"), each tagged with
+    ``row["_ground_truth_label"] = "verified_false"`` (kept True rows are
+    tagged ``"verified_true"``, mirroring ``Claim.ground_truth_label``).
+
+    Dedup priority: verified-true rows are always deduped first (their
+    claim_ids win), verified-false rows are only added for claim_ids not
+    already claimed by a true row — this matters because a duplicate
+    claim_id can appear with different ratings in different rows of the
+    raw export, and this filter's long-standing verified-true-only
+    philosophy should never lose a true claim to an incidentally
+    earlier-occurring false one just because ``include_verified_false``
+    was turned on.
     """
     seen_ids: set[Any] = set()
     kept: list[dict[str, Any]] = []
@@ -190,7 +235,20 @@ def filter_and_dedupe(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if claim_id in seen_ids:
             continue
         seen_ids.add(claim_id)
-        kept.append(row)
+        kept.append({**row, "_ground_truth_label": "verified_true"})
+
+    if include_verified_false:
+        for row in rows:
+            if row.get("normalised_rating") is not False:
+                continue
+            if not _is_verdict_consistent_with_false(row.get("original_verdict")):
+                continue
+            claim_id = row.get("claim_id")
+            if claim_id in seen_ids:
+                continue
+            seen_ids.add(claim_id)
+            kept.append({**row, "_ground_truth_label": "verified_false"})
+
     return kept
 
 
@@ -238,6 +296,10 @@ def _to_enriched_entry(row: dict[str, Any], llm: OllamaLLM) -> dict[str, Any]:
         "source": str(row["url"]),
         "notes": f"original_verdict={verdict}; date_published={published}",
         "verified": False,
+        # See filter_and_dedupe()'s docstring — "verified_true" for the
+        # audited subset, "verified_false" only when the caller opted in
+        # via --include-verified-false (unaudited, see that docstring).
+        "ground_truth_label": row["_ground_truth_label"],
     }
 
 
@@ -250,9 +312,12 @@ def enrich(
     port: int,
     limit: int | None,
     checkpoint_every: int,
+    include_verified_false: bool = False,
 ) -> None:
     """Run the full filter -> dedupe -> enrich -> checkpoint pipeline."""
-    rows = filter_and_dedupe(_read_raw_rows(input_path))
+    rows = filter_and_dedupe(
+        _read_raw_rows(input_path), include_verified_false=include_verified_false
+    )
     if limit is not None:
         rows = rows[:limit]
 
@@ -312,6 +377,17 @@ def main(argv: list[str] | None = None) -> int:
         "--checkpoint-every", type=int, default=25, help="Save progress every N claims."
     )
     parser.add_argument(
+        "--include-verified-false",
+        action="store_true",
+        help=(
+            "Also enrich normalised_rating=False rows, tagged "
+            "ground_truth_label='verified_false'. Default: off (unaudited "
+            "— see filter_and_dedupe()'s docstring). Re-running with this "
+            "flag against an existing output file only enriches the newly "
+            "included rows (resumable, see module docstring)."
+        ),
+    )
+    parser.add_argument(
         "--model", default=DEFAULT_MODEL, help=f"Ollama model name (default: {DEFAULT_MODEL})."
     )
     parser.add_argument("--ollama-host", default=None, help="Override EIGER_OLLAMA_HOST.")
@@ -332,6 +408,7 @@ def main(argv: list[str] | None = None) -> int:
         port=args.ollama_port or settings.ollama_port,
         limit=args.limit,
         checkpoint_every=args.checkpoint_every,
+        include_verified_false=args.include_verified_false,
     )
     return 0
 

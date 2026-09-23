@@ -89,9 +89,18 @@ log = get_logger(__name__)
 # [2]=repository root.
 _DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "averitec"
 
+# HuggingFace Hub dataset ID used by download() — the same one already
+# documented as the manual fallback (docs/DATASETS.md section 3).
+_HF_DATASET_ID = "chenxwh/AVeriTeC"
+
 # Only this label is treated as a verified-true ground-truth claim — see
 # the module docstring's point 1.
 _VERIFIED_TRUE_LABEL = "Supported"
+# The unambiguous opposite label. Kept only when include_verified_false=True
+# (see load()). Other AVeriTeC labels ("Not Enough Evidence", "Conflicting
+# Evidence/Cherrypicking") are neither clearly true nor false and are never
+# kept — forcing them into a binary would misrepresent the source rating.
+_VERIFIED_FALSE_LABEL = "Refuted"
 
 
 class AVeriTecDataset(BaseDataset):
@@ -146,39 +155,92 @@ class AVeriTecDataset(BaseDataset):
 
     def download(self, target_dir: str) -> None:
         """
-        Guard, not a fetcher — see the class/module docstring.
+        Fetch AVeriTeC split files via the HuggingFace ``datasets`` library.
 
         No-ops (logged at debug level) if at least one ``*.jsonl`` file
-        already exists directly under ``target_dir``. Otherwise raises
-        IngestionError with the manual download steps from
-        docs/DATASETS.md, rather than silently doing nothing and letting
-        a later load() fail with a confusing bare "file not found".
+        already exists directly under ``target_dir`` — download() never
+        overwrites data that might already be a deliberately-curated subset.
+        Otherwise attempts ``datasets.load_dataset("chenxwh/AVeriTeC",
+        split=<name>)`` for each of ``train``/``dev``/``test`` (the same
+        HuggingFace dataset ID and splits already documented as the manual
+        fallback in docs/DATASETS.md section 3), writing each split that
+        exists to ``<target_dir>/<split>.jsonl`` via the dataset's own
+        ``to_json()``. A split simply not existing on the Hub is not an
+        error (not every AVeriTeC mirror ships all three); only ending up
+        with zero fetched splits is.
+
+        IMPORTANT — verified at import-chain level only, not against a live
+        network call: this sandbox's outbound network allowlist blocks
+        huggingface.co, so this method's *logic* was written and reviewed
+        carefully but has not itself been exercised against the real Hub.
+        Before relying on it, run it once on a machine with real internet
+        access and confirm the resulting ``*.jsonl`` files load correctly
+        via this class's own ``load()`` (see docs/DATASETS.md section 3 for
+        the field-mapping table to check against).
 
         Args:
-            target_dir: Directory expected to contain AVeriTeC's
-                        ``<split>.jsonl`` files.
+            target_dir: Directory to fetch AVeriTeC's ``<split>.jsonl``
+                        files into (created if missing).
 
         Raises:
-            IngestionError: If no ``*.jsonl`` files are present.
+            IngestionError: If ``datasets`` is not installed, or if fetching
+                            every split fails (e.g. no network access, the
+                            Hub dataset ID has changed, or a genuine
+                            download error) — never a silent no-op.
         """
         target = Path(target_dir)
         if target.is_dir() and any(target.glob("*.jsonl")):
             log.debug("averitec.download_noop_already_present", target_dir=target_dir)
             return
-        log.debug("averitec.download_missing", target_dir=target_dir)
-        raise IngestionError(
-            f"No AVeriTeC '*.jsonl' split files found under '{target_dir}'. "
-            "Automated download is not implemented yet (it requires the "
-            "optional HuggingFace 'datasets' library and network access) "
-            "— see docs/DATASETS.md, section 3, for the exact manual "
-            "download steps (pip install datasets; load_dataset(...), or "
-            "git clone the AVeriTeC repository)."
-        )
 
-    def load(self, split: str = "test", max_claims: int | None = None) -> list[Claim]:
+        try:
+            from datasets import load_dataset
+        except ImportError as exc:
+            raise IngestionError(
+                "Automated AVeriTeC download requires the optional "
+                "HuggingFace 'datasets' library. Install it with: "
+                "pip install 'eiger[data-import]' (or: pip install datasets). "
+                "See docs/DATASETS.md section 3 for the manual fallback."
+            ) from exc
+
+        target.mkdir(parents=True, exist_ok=True)
+        fetched_splits: list[str] = []
+        errors: dict[str, str] = {}
+        for split_name in ("train", "dev", "test"):
+            try:
+                # Bug fix (found in review): to_json() used to sit outside
+                # this try block, so a write failure (disk full, permission
+                # denied, bad target path) would escape as a raw, uncaught
+                # exception instead of being recorded per-split like a Hub
+                # fetch failure — aborting the whole loop and contradicting
+                # this method's own documented "only ever raises
+                # IngestionError, tried per-split" contract.
+                split_dataset = load_dataset(_HF_DATASET_ID, split=split_name)
+                split_dataset.to_json(str(target / f"{split_name}.jsonl"))
+            except Exception as exc:  # noqa: BLE001 — any Hub/network/write failure, tried per-split
+                errors[split_name] = str(exc)
+                continue
+            fetched_splits.append(split_name)
+            log.info("averitec.download_split_fetched", split=split_name, target_dir=target_dir)
+
+        if not fetched_splits:
+            raise IngestionError(
+                f"Automated AVeriTeC download failed for every split ({_HF_DATASET_ID!r}): "
+                f"{errors}. See docs/DATASETS.md section 3 for the manual download steps "
+                "(pip install datasets; load_dataset(...), or git clone the AVeriTeC repository)."
+            )
+        log.info("averitec.download_complete", splits=fetched_splits, target_dir=target_dir)
+
+    def load(
+        self,
+        split: str = "test",
+        max_claims: int | None = None,
+        include_verified_false: bool = False,
+    ) -> list[Claim]:
         """
         Parse ``<data_dir>/<split>.jsonl`` and return Claim objects for
-        every ``label == "Supported"`` record, in file order.
+        every ``label == "Supported"`` record (plus ``"Refuted"`` records
+        if ``include_verified_false=True``), in file order.
 
         Args:
             split:      Selects ``<data_dir>/<split>.jsonl`` (e.g. "test",
@@ -188,28 +250,46 @@ class AVeriTecDataset(BaseDataset):
                         the first N in file order after filtering (file
                         order is stable and deterministic — no re-sorting
                         is needed).
+            include_verified_false: Default False, preserving this loader's
+                        original behavior exactly (Supported-label subset
+                        only). If True, also includes "Refuted"-label
+                        records, tagged ``Claim.ground_truth_label =
+                        "verified_false"``. Records with any other label
+                        ("Not Enough Evidence", "Conflicting Evidence/
+                        Cherrypicking") are never included — they are
+                        neither clearly true nor false.
 
         Returns:
-            List of Claim objects for the Supported-label subset.
+            List of Claim objects for the Supported (and optionally
+            Refuted) label subset.
 
         Raises:
             IngestionError: If the split file is missing, unreadable, has
-                            invalid JSON on any line, or a Supported
-                            record is missing the required "claim" field.
+                            invalid JSON on any line, or a kept record is
+                            missing the required "claim" field.
         """
         file_path = self.data_dir / f"{split}.jsonl"
         log.debug("averitec.load_start", path=str(file_path), split=split)
         raw_items = self._read_jsonl(file_path)
 
+        kept_labels = {_VERIFIED_TRUE_LABEL}
+        if include_verified_false:
+            kept_labels.add(_VERIFIED_FALSE_LABEL)
+
         try:
             claims = [
                 self._to_claim(index, item)
                 for index, item in enumerate(raw_items)
-                if item.get("label") == _VERIFIED_TRUE_LABEL
+                # isinstance guard: a malformed record could have a
+                # non-string "label" (e.g. a list/dict), which would raise
+                # an uncaught TypeError from `in kept_labels` (a set) rather
+                # than being treated as "does not match" and skipped, like
+                # every other unrecognized label value is.
+                if isinstance(item.get("label"), str) and item["label"] in kept_labels
             ]
         except KeyError as exc:
             raise IngestionError(
-                f"AVeriTeC split file '{file_path}' has a '{_VERIFIED_TRUE_LABEL}' "
+                f"AVeriTeC split file '{file_path}' has a kept-label "
                 f"record missing required field {exc}. Expected keys: claim, label."
             ) from exc
 
@@ -292,10 +372,19 @@ class AVeriTecDataset(BaseDataset):
         if evidence_urls:
             metadata["evidence_urls"] = evidence_urls
 
+        label = item.get("label")
+        if label == _VERIFIED_TRUE_LABEL:
+            ground_truth_label = "verified_true"
+        elif label == _VERIFIED_FALSE_LABEL:
+            ground_truth_label = "verified_false"
+        else:
+            ground_truth_label = None  # unreachable given load()'s filter, kept defensive
+
         return Claim(
             claim_id=f"AVERITEC_{index:05d}",
             original_fact=item["claim"],
             context_query=context_query,
             source_dataset=self.name,
             metadata=metadata,
+            ground_truth_label=ground_truth_label,
         )

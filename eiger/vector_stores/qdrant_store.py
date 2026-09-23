@@ -94,6 +94,11 @@ def _document_to_payload(doc: Document) -> dict[str, Any]:
         "doc_type": doc.doc_type,
         "sensitivity_class": doc.sensitivity_class,
         "risk_level": doc.risk_level,
+        # Same round-trip-fidelity rationale as sensitivity_class/risk_level
+        # above (post-Sprint-5 addition): ground_truth_label also lives on
+        # the base Document class, so it must be included here too, or it
+        # would be silently lost on every dense-retriever round trip.
+        "ground_truth_label": doc.ground_truth_label,
     }
     if isinstance(doc, PoisonedDocument):
         payload["attack_name"] = doc.attack_name

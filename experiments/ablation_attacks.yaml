@@ -1,8 +1,18 @@
-# EIBench Ablation Study — All attack types at poison_rate=0.3
+# EIBench Ablation Study — all 6 mechanical attack types at poison_rate=0.3
 # Run with: python -m eiger run experiments/ablation_attacks.yaml
+#
+# This is an ENGINEERING ABLATION, not a paper-facing experiment: it
+# includes attribution_switch (M03) and cherry_picking (M05), both of
+# which are explicitly ABSENT from the EIB paper's published benchmark
+# corpus (Corpus_claim_RAG_Mistral_output_v3.xlsx) for ethical/reputational
+# reasons stated in the paper itself (§6.0.2) — see
+# eiger/attacks/attribution.py and eiger/attacks/cherry_picking.py's own
+# docstrings. allow_non_benchmark_attacks: true is required below or
+# CorpusBuilder raises ConfigurationError; do not copy that flag into a
+# config whose results will be reported as part of the EIB benchmark.
 
 experiment_id: ablation_attacks_v1
-description: "Ablation over all 4 attack types at poison_rate=0.3, Llama 3.1 8B"
+description: "Ablation over all 6 mechanical attack types at poison_rate=0.3, Llama 3.1 8B"
 seed: 42
 
 dataset:
@@ -10,6 +20,8 @@ dataset:
   path: eibench_raw_claims.json
   split: test
   max_claims: null
+
+allow_non_benchmark_attacks: true  # includes M03/M05 — see note above
 
 attacks:
   - name: numerical_shift
@@ -26,6 +38,14 @@ attacks:
     poison_rate: 0.3
     params:
       inject_count: 1
+  - name: cherry_picking
+    poison_rate: 0.3
+    params:
+      omit_count: 1
+  - name: missing_context
+    poison_rate: 0.3
+    params:
+      omit_count: 1
 
 retriever:
   type: dense

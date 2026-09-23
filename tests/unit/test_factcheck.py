@@ -188,6 +188,52 @@ class TestFactCheckDatasetLoad:
             FactCheckDataset(data_dir=data_dir).load()
 
 
+# ─── ground_truth_label / include_verified_false ─────────────────────────────
+
+class TestFactCheckDatasetGroundTruthLabel:
+    def test_true_verdict_tagged_verified_true_by_default(self, data_dir: Path) -> None:
+        _write_jsonl(data_dir / "test.jsonl", [_true_record()])
+        claim = FactCheckDataset(data_dir=data_dir).load()[0]
+        assert claim.ground_truth_label == "verified_true"
+
+    def test_false_verdict_excluded_by_default(self, data_dir: Path) -> None:
+        record = _true_record(claim_id="FC-2024-0092", verdict="false")
+        _write_jsonl(data_dir / "test.jsonl", [record])
+        assert FactCheckDataset(data_dir=data_dir).load() == []
+
+    def test_include_verified_false_keeps_false_verdict(self, data_dir: Path) -> None:
+        records = [
+            _true_record(claim_id="FC-1", claim="Claim A", verdict="true"),
+            _true_record(claim_id="FC-2", claim="Claim B", verdict="false"),
+        ]
+        _write_jsonl(data_dir / "test.jsonl", records)
+        claims = FactCheckDataset(data_dir=data_dir).load(include_verified_false=True)
+        by_text = {c.original_fact: c.ground_truth_label for c in claims}
+        assert by_text == {
+            "Claim A": "verified_true",
+            "Claim B": "verified_false",
+        }
+
+    def test_to_claim_direct_call_with_unrecognized_verdict_yields_none(
+        self, data_dir: Path
+    ) -> None:
+        """
+        Coverage for _to_claim's defensive `else: ground_truth_label = None`
+        branch — unreachable via load() (its filter never lets a
+        non-true/false verdict through to _to_claim), exercised here via a
+        direct call to confirm the fallback itself is correct.
+        """
+        dataset = FactCheckDataset(data_dir=data_dir)
+        claim = dataset._to_claim(_true_record(verdict="mixture"))
+        assert claim.ground_truth_label is None
+
+    def test_include_verified_false_still_excludes_other_verdicts(self, data_dir: Path) -> None:
+        record = _true_record(claim_id="FC-3", verdict="mixture")
+        _write_jsonl(data_dir / "test.jsonl", [record])
+        claims = FactCheckDataset(data_dir=data_dir).load(include_verified_false=True)
+        assert claims == []
+
+
 # ─── content_hash ─────────────────────────────────────────────────────────────
 
 class TestFactCheckDatasetContentHash:

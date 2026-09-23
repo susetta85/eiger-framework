@@ -9,17 +9,21 @@ AVeriTeC-specific). See eiger/datasets/averitec.py's module docstring for
 the full rationale.
 
 What these tests do NOT cover:
-  - Real network downloads or the HuggingFace `datasets` library — not a
-    runtime dependency of this loader (download() is a guard, not a
-    fetcher; see TestAVeriTecDatasetDownload).
+  - A real network call to HuggingFace Hub — download()'s `load_dataset`
+    call is mocked throughout TestAVeriTecDatasetDownload (the `datasets`
+    library is an optional runtime dependency, and no test suite should
+    depend on live network access). See that class's own module-level
+    note and eiger/datasets/averitec.py's download() docstring for the
+    real-network verification this implies is still owed.
 """
 
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -215,6 +219,75 @@ class TestAVeriTecDatasetLoad:
             AVeriTecDataset(data_dir=data_dir).load()
 
 
+# ─── ground_truth_label / include_verified_false ─────────────────────────────
+
+class TestAVeriTecDatasetGroundTruthLabel:
+    def test_supported_record_tagged_verified_true_by_default(self, data_dir: Path) -> None:
+        _write_jsonl(data_dir / "test.jsonl", [_supported_record()])
+        claim = AVeriTecDataset(data_dir=data_dir).load()[0]
+        assert claim.ground_truth_label == "verified_true"
+
+    def test_refuted_excluded_by_default(self, data_dir: Path) -> None:
+        _write_jsonl(data_dir / "test.jsonl", [_supported_record(label="Refuted")])
+        claims = AVeriTecDataset(data_dir=data_dir).load()
+        assert claims == []
+
+    def test_include_verified_false_keeps_refuted_tagged_verified_false(
+        self, data_dir: Path
+    ) -> None:
+        records = [
+            _supported_record(claim="True claim"),
+            _supported_record(claim="False claim", label="Refuted"),
+        ]
+        _write_jsonl(data_dir / "test.jsonl", records)
+        claims = AVeriTecDataset(data_dir=data_dir).load(include_verified_false=True)
+        by_text = {c.original_fact: c.ground_truth_label for c in claims}
+        assert by_text == {
+            "True claim": "verified_true",
+            "False claim": "verified_false",
+        }
+
+    def test_to_claim_direct_call_with_unrecognized_label_yields_none(self, data_dir: Path) -> None:
+        """
+        Coverage for _to_claim's defensive `else: ground_truth_label = None`
+        branch — unreachable via load() (its filter never lets a
+        non-Supported/Refuted label through to _to_claim), but exercised
+        here via a direct call to confirm the fallback itself is correct.
+        """
+        dataset = AVeriTecDataset(data_dir=data_dir)
+        claim = dataset._to_claim(0, _supported_record(label="Not Enough Evidence"))
+        assert claim.ground_truth_label is None
+
+    def test_include_verified_false_still_excludes_ambiguous_labels(
+        self, data_dir: Path
+    ) -> None:
+        records = [
+            _supported_record(claim="Claim A", label="Not Enough Evidence"),
+            _supported_record(claim="Claim B", label="Conflicting Evidence/Cherrypicking"),
+        ]
+        _write_jsonl(data_dir / "test.jsonl", records)
+        claims = AVeriTecDataset(data_dir=data_dir).load(include_verified_false=True)
+        assert claims == []
+
+    def test_load_skips_record_with_non_string_label_without_raising(
+        self, data_dir: Path
+    ) -> None:
+        """
+        Regression test: `item.get("label") in kept_labels` (a set) raises
+        an uncaught TypeError if label is unhashable (e.g. a list), unlike
+        every other malformed-but-comparable label value, which is simply
+        skipped. A malformed record must degrade the same way, not crash
+        the whole load() call.
+        """
+        records = [
+            _supported_record(claim="Claim A"),
+            _supported_record(claim="Claim B", label=["Supported"]),
+        ]
+        _write_jsonl(data_dir / "test.jsonl", records)
+        claims = AVeriTecDataset(data_dir=data_dir).load()
+        assert [c.original_fact for c in claims] == ["Claim A"]
+
+
 # ─── content_hash ─────────────────────────────────────────────────────────────
 
 class TestAVeriTecDatasetContentHash:
@@ -245,16 +318,77 @@ class TestAVeriTecDatasetContentHash:
 # ─── download() ─────────────────────────────────────────────────────────────
 
 class TestAVeriTecDatasetDownload:
+    """
+    download() now attempts a real fetch via HuggingFace `datasets.
+    load_dataset()` when no `*.jsonl` files are already present. Every test
+    here mocks that call (via sys.modules["datasets"]) rather than hitting
+    the network — see this module's own docstring.
+    """
+
     def test_download_noops_when_jsonl_files_already_present(self, data_dir: Path) -> None:
         _write_jsonl(data_dir / "test.jsonl", [_supported_record()])
         AVeriTecDataset(data_dir=data_dir).download(str(data_dir))  # must not raise
 
-    def test_download_raises_when_directory_missing(self, tmp_path: Path) -> None:
+    def test_download_raises_when_datasets_library_not_installed(self, tmp_path: Path) -> None:
         missing = tmp_path / "does-not-exist"
-        with pytest.raises(IngestionError, match="Automated download is not implemented"):
-            AVeriTecDataset().download(str(missing))
+        with patch.dict(sys.modules, {"datasets": None}):
+            with pytest.raises(IngestionError, match="requires the optional"):
+                AVeriTecDataset().download(str(missing))
 
-    def test_download_raises_when_directory_empty(self, data_dir: Path) -> None:
-        data_dir.mkdir(parents=True, exist_ok=True)
-        with pytest.raises(IngestionError, match="Automated download is not implemented"):
-            AVeriTecDataset().download(str(data_dir))
+    def test_download_fetches_every_split_on_success(self, tmp_path: Path) -> None:
+        target = tmp_path / "averitec"
+        fake_split = MagicMock()
+        fake_datasets_module = MagicMock()
+        fake_datasets_module.load_dataset.return_value = fake_split
+
+        with patch.dict(sys.modules, {"datasets": fake_datasets_module}):
+            AVeriTecDataset().download(str(target))  # must not raise
+
+        assert fake_datasets_module.load_dataset.call_count == 3  # train, dev, test
+        assert fake_split.to_json.call_count == 3
+        called_splits = {call.kwargs["split"] for call in fake_datasets_module.load_dataset.call_args_list}
+        assert called_splits == {"train", "dev", "test"}
+
+    def test_download_raises_when_every_split_fetch_fails(self, tmp_path: Path) -> None:
+        target = tmp_path / "averitec"
+        fake_datasets_module = MagicMock()
+        fake_datasets_module.load_dataset.side_effect = RuntimeError("network unreachable")
+
+        with patch.dict(sys.modules, {"datasets": fake_datasets_module}):
+            with pytest.raises(IngestionError, match="failed for every split"):
+                AVeriTecDataset().download(str(target))
+
+    def test_download_records_write_failure_instead_of_crashing(self, tmp_path: Path) -> None:
+        """
+        Regression test for a real bug found in review: to_json() used to
+        sit outside the per-split try/except, so a write failure (e.g. disk
+        full) would escape uncaught and abort the whole loop instead of
+        being recorded per-split like a Hub fetch failure.
+        """
+        target = tmp_path / "averitec"
+        fake_split = MagicMock()
+        fake_split.to_json.side_effect = OSError("disk full")
+        fake_datasets_module = MagicMock()
+        fake_datasets_module.load_dataset.return_value = fake_split
+
+        with patch.dict(sys.modules, {"datasets": fake_datasets_module}):
+            with pytest.raises(IngestionError, match="failed for every split"):
+                AVeriTecDataset().download(str(target))
+
+    def test_download_succeeds_if_at_least_one_split_fetch_works(self, tmp_path: Path) -> None:
+        """A Hub mirror missing e.g. 'dev' must not fail the whole download."""
+        target = tmp_path / "averitec"
+        fake_split = MagicMock()
+        fake_datasets_module = MagicMock()
+
+        def _load_dataset(_dataset_id: str, split: str):
+            if split == "dev":
+                raise RuntimeError("split not found")
+            return fake_split
+
+        fake_datasets_module.load_dataset.side_effect = _load_dataset
+
+        with patch.dict(sys.modules, {"datasets": fake_datasets_module}):
+            AVeriTecDataset().download(str(target))  # must not raise
+
+        assert fake_split.to_json.call_count == 2  # train + test only

@@ -160,6 +160,80 @@ Tre osservazioni.
 
 Il risultato utilizzabile di questo esperimento non è il valore di PRR, ma la scomposizione: la manipolazione viene quasi sempre recuperata insieme alla verità, e il contesto dato al modello contiene quindi una contraddizione. È lo scenario in cui misurare FFR ha più senso.
 
+## 4.7 Confronto dei retriever con query v2 (corpus ufficiale, curva completa)
+
+Stesse 300 claim, stesse query v2, stessi documenti avvelenati e stessi seed. Il denso è sul commit della revisione (Mac-116), l'ibrido sul commit `4690d28` (Mac-116, 25 run completate il 13 novembre). Il BM25 è disponibile solo al 10% (Mac-Susy, commit `4690d28`).
+
+PRR e PRD@1 (media su 5 seed; IC claims × seed tra parentesi):
+
+| Tasso | Denso PRR | Ibrido PRR | Denso PRD@1 | Ibrido PRD@1 |
+|---|---|---|---|---|
+| 1% | 0.071 [0.034, 0.115] | 0.056 [0.029, 0.087] | 0.006 | 0.006 |
+| 3% | 0.142 [0.071, 0.218] | 0.121 [0.061, 0.183] | 0.017 | 0.015 |
+| 5% | 0.201 [0.149, 0.262] | 0.174 [0.125, 0.225] | 0.023 | 0.021 |
+| 10% | 0.333 [0.300, 0.367] | 0.297 [0.261, 0.333] | 0.041 [0.026, 0.059] | 0.039 [0.025, 0.055] |
+
+Esposizione mirata (variante propria nel top-5) e collaterale (solo varianti di altri claim), al 10%:
+
+| Retriever | Mirata | Collaterale |
+|---|---|---|
+| Denso | 0.095 | 0.239 |
+| BM25 | 0.087 | 0.225 |
+| Ibrido | 0.094 | 0.203 |
+
+Lettura.
+- L'ibrido abbassa il PRR a ogni tasso, ma la differenza è nella parte collaterale (0.203 contro 0.239 al 10%). La parte mirata è identica (0.094 contro 0.095): il claim attaccato viene recuperato allo stesso modo.
+- Il PRD@1 è praticamente uguale (differenze dentro gli intervalli): con query neutre, il primo posto non dipende dal retriever.
+- Il valore del PRD@1 è basso a tutti i tassi, e questo è coerente con quanto visto sopra: con query che non contengono il valore cambiato, il documento avvelenato non prende quasi mai il primo posto.
+- Confronto con Snopes: lì il PRD@1 del denso era 0.046 al 10% con query a template; qui 0.041 con query neutre, quindi il valore non dipende dal tipo di query nei limiti di questa misura. Il risultato su Snopes per BM25 (0.002) era causato dal bug del pareggio, già corretto.
+
+## 4.6bis Esperimenti da rifare (avviso, 13 novembre 2026)
+
+Non vanno citati come risultati, anche se il comando li ha prodotti:
+- **Snopes, BM25 (`poison_rate_sweep_benchmark_sparse`)**, commit `c437527`: PRD@1 azzerato dal bug del pareggio BM25 (sezione 2.5 di `docs/CODE_REVIEW.md`). PRR invariato in pratica, ma va rifatto con `4690d28` per ottenere anche il PRD@1 corretto.
+- **Snopes, ibrido (`poison_rate_sweep_benchmark_hybrid`)**, commit `c437527`: stesso bug sul lato lessicale. Va rifatto con `4690d28`. Il valore vecchio è conservato in `poison_rate_sweep_benchmark_hybrid_v1_before_tiefix` se è stato spostato.
+- **Snopes, denso**: valido, rieseguito dopo la revisione (commit `270c9d6`).
+- **Corpus ufficiale e corpus grande**: validi per il commit usato (denso su revisione, ibrido su `4690d28`).
+
+Ambiente: dal 13 novembre Ollama è alla versione **0.40.16** su entrambi i Mac. Gli sweep eseguiti prima su Mac-116 usavano 0.40.13. La versione di Ollama non incide su PRR, PRD, Source Integrity ed ERS (dipendono solo dal retrieval), ma può cambiare il testo delle risposte: va tenuta uguale prima di misurare FFR o PCS.
+
+## 4.8 Stato delle misure di sensibilità e difesa (4 novembre -> 13 novembre 2026)
+
+Obiettivo: misurare quanto il sistema dipende da un contesto manipolato e se una difesa semplice lo riduce. Le manipolazioni restano quelle già nel corpus, revisionate dove possibile; non se ne generano di nuove.
+
+| Misura | Cosa risponde | Stato | Cosa serve |
+|---|---|---|---|
+| 1. PCS (sensibilità della risposta al contesto avvelenato) | La risposta cambia quando si rimuovono i documenti avvelenati? | Implementata nel runner (generazione controfattuale). Non ancora eseguita sul corpus con query v2. | Rilanciare lo sweep al 10% con `pcs` tra le metriche. Il costo è circa il doppio per run. PCS è un proxy a similarità di embedding: si riporta come "PCS (embedding-similarity proxy)". |
+| 2. Calibrazione di FFR e Source Integrity | Le metriche automatiche correlano con il giudizio umano? | Strumenti pronti (`sample_for_faithfulness_calibration.py`, `compute_calibration_correlation.py`). Nessuna annotazione raccolta. | Un annotatore con codebook, circa 40-60 record, più un secondo annotatore su una parte del campione per misurare l'accordo. Chi annota è ancora da decidere. |
+| 3. Audit di contraddizione (difesa) | Una coppia di documenti in contraddizione nel top-5 segnala la manipolazione? | Da implementare. Non richiede generazioni: usa il modello NLI sui risultati già prodotti. | Script `contradiction_audit.py`. Soglia da calibrare sui record a 0% (falsi allarmi). L'audit non usa il testo del claim come riferimento, perché in un sistema reale il vero non è noto. |
+
+Decisioni aperte prima di implementare la misura 3:
+- definizione di contraddizione: probabilità NLI di contraddizione sopra soglia (punto di partenza 0.5, da calibrare);
+- trattamento delle coppie: si considerano solo documenti con lo stesso claim_id, e si escludono le coppie non varianti, per evitare un segnale banale;
+- chi decide le soglie e i criteri di validazione: la collega e il gruppo.
+
+Stato dei risultati al 13 novembre 2026: corpus ufficiale con query v2, retriever densi (curva completa, Mac-116); BM25 solo al 10% (Mac-Susy, commit 4690d28; curva completa da rilanciare); ibrido completo su tutti i tassi (25 run, Mac-116, commit 4690d28, completate il 13 novembre, tabella in 4.7). Lo sweep ibrido su Snopes resta da rifare con il commit 4690d28, perché quello precedente è pre-correzione.
+
+## 4.9 Prospettiva di ricerca: misure sulla risposta e manipolazioni scritte a mano (piano, 13 novembre 2026)
+
+Domanda di ricerca. I risultati finora riguardano il retrieval: con query neutre la variante avvelenata entra nel contesto quasi sempre e vince il primo posto circa nella metà dei casi in cui è recuperata. Resta aperto il punto centrale del progetto: **il modello adotta l'informazione manipolata nella risposta?** Le misure della sezione 4.8 (PCS, calibrazione di FFR e Source Integrity, audit di contraddizione) servono a rispondere.
+
+Manipolazioni scritte a mano. Oltre alle varianti prodotte da Mistral, la ricercatrice scriverà a mano un piccolo insieme di varianti più sottili: plausibili, coerenti con il resto del claim, ma con un elemento falso. Ruolo del codice: solo valutarle con la stessa pipeline e le stesse misure, non generarle né migliorarle.
+
+Condizioni (da rispettare prima di qualunque esecuzione):
+- **Gate etico.** Ogni variante passa dallo stesso controllo del corpus: classe di sensibilità S0–S2 (S3 esclusa), nessuna trasformazione azionabile in ambito sanitario, elettorale o finanziario, decisione registrata nel registro decisioni etiche con data e responsabile. La revisione è della collega, non di chi scrive le varianti.
+- **Conservazione.** Le varianti non vanno nel repository GitHub, che oggi è pubblico: si tengono in `data/handcrafted/` (cartella esclusa da git) o in un repository privato, e si trasferiscono tra i Mac a mano.
+- **Pubblicazione.** Nel paper solo risultati aggregati ed esempi astratti o sanitizzati, mai i testi.
+- **Valutazione indipendente.** Chi scrive le varianti non giudica le risposte: l'annotazione umana (misura 2) va fatta da un'altra persona, senza sapere quali varianti sono scritte a mano.
+
+Disegno di valutazione proposto:
+- formato: un CSV con lo stesso schema di `Modified_Claims` (`item_id`, `claim_text`, `claim_original_reference`, `manipulation_category`), collegato ai claim del corpus ufficiale tramite `item_id`;
+- confronto appaiato: per gli stessi claim, variante Mistral contro variante manuale, stesse query v2, stesso retriever denso, tasso di avvelenamento 100% sui claim dell'insieme;
+- misure: esposizione (variante nel top-5), rango rispetto al documento vero, PCS (la risposta cambia rimuovendo la variante?), adozione dell'elemento falso nella risposta (annotazione umana cieca);
+- da implementare: un dataset ristretto ai claim con variante manuale e l'opzione dell'attacco `corpus_precomputed` per leggere le varianti da `data/handcrafted/`.
+
+Limite da dichiarare: l'insieme manuale sarà piccolo, quindi i risultati sono un caso di studio, non una stima generale.
+
 ## 5. Limiti e interpretazione
 
 FFR è zero per una ragione strutturale. FFR conta una risposta come falsità fedele solo se la faithfulness supera 0.8 e la correttezza scende sotto 0.2. Lo scorer proxy confronta similarità di embedding, e una risposta sullo stesso argomento del fatto vero ottiene comunque una correttezza alta anche se contiene il falso. Serve uno scorer che verifichi l'implicazione.

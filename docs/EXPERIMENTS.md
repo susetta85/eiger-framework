@@ -181,6 +181,17 @@ Esposizione mirata (variante propria nel top-5) e collaterale (solo varianti di 
 | BM25 | 0.087 | 0.225 |
 | Ibrido | 0.094 | 0.203 |
 
+BM25, curva completa (corpus ufficiale, query v2, Mac-Susy). PRR e PRD@1 medi su 5 seed; IC claims × seed tra parentesi. ATTENZIONE: le run risultano su due commit (`4690d28` e `7e5421d`); il numero va confermato prima di essere citato (sezione 4.10).
+
+| Tasso | BM25 PRR | IC | BM25 PRD@1 | IC |
+|---|---|---|---|---|
+| 1% | 0.041 | [0.019, 0.068] | 0.007 | [0.001, 0.013] |
+| 3% | 0.123 | [0.066, 0.185] | 0.014 | [0.005, 0.025] |
+| 5% | 0.178 | [0.122, 0.236] | 0.023 | [0.013, 0.034] |
+| 10% | 0.312 | [0.276, 0.348] | 0.043 | [0.027, 0.060] |
+
+Confronto con il denso, PRR: 0.071, 0.142, 0.201, 0.333; ibrido: 0.056, 0.121, 0.174, 0.297. Il BM25 è nel mezzo a ogni tasso.
+
 Lettura.
 - L'ibrido abbassa il PRR a ogni tasso, ma la differenza è nella parte collaterale (0.203 contro 0.239 al 10%). La parte mirata è identica (0.094 contro 0.095): il claim attaccato viene recuperato allo stesso modo.
 - Il PRD@1 è praticamente uguale (differenze dentro gli intervalli): con query neutre, il primo posto non dipende dal retriever.
@@ -190,8 +201,8 @@ Lettura.
 ## 4.6bis Esperimenti da rifare (avviso, 13 novembre 2026)
 
 Non vanno citati come risultati, anche se il comando li ha prodotti:
-- **Snopes, BM25 (`poison_rate_sweep_benchmark_sparse`)**, commit `c437527`: PRD@1 azzerato dal bug del pareggio BM25 (sezione 2.5 di `docs/CODE_REVIEW.md`). PRR invariato in pratica, ma va rifatto con `4690d28` per ottenere anche il PRD@1 corretto.
-- **Snopes, ibrido (`poison_rate_sweep_benchmark_hybrid`)**, commit `c437527`: stesso bug sul lato lessicale. Va rifatto con `4690d28`. Il valore vecchio è conservato in `poison_rate_sweep_benchmark_hybrid_v1_before_tiefix` se è stato spostato.
+- **Snopes, BM25 (`poison_rate_sweep_benchmark_sparse`)**, commit `c437527`: PRD@1 azzerato dal bug del pareggio BM25 (sezione 2.5 di `docs/CODE_REVIEW.md`). PRR invariato in pratica, ma va rifatto con `4690d28` per ottenere anche il PRD@1 corretto. Risultato corretto al 10% (Mac-Susy, 15 novembre, 5 run, commit `7e5421d`, equivalente a `4690d28`): PRR 0.452 [0.384, 0.522], PRD@1 0.028 [0.006, 0.058], mirata 0.166, collaterale 0.286. Confronto al 10%: denso PRR 0.538 e PRD@1 0.046; ibrido PRR 0.434 e PRD@1 0.046; BM25 PRR 0.452 e PRD@1 0.028. Il PRD@1 di BM25 passa da 0.002 (con il bug) a 0.028: conferma che il valore vecchio era azzerato dal pareggio, non dal metodo. Il rilancio su Mac-Domenico è indipendente e serve come replica. Curva completa da fare.
+- **Snopes, ibrido (`poison_rate_sweep_benchmark_hybrid`)**: rieseguito per intero il 15 novembre su Mac-116 con la correzione (25 run, commit `7e5421d` e `c0f20d3`; da confermare che `7e5421d` contenga `4690d28`, sezione 4.10). PRR 0.078 / 0.194 / 0.272 / 0.434 (1/3/5/10%), PRD@1 0.006 / 0.010 / 0.018 / 0.046, mirata 0.170 e collaterale 0.264 al 10%. Prima della correzione i valori erano identici ai tassi bassi e al 10% PRR 0.430: la correzione cambia il PRR di 0.004 e non il PRD@1, come previsto (nell'ibrido, a parità sul lato lessicale, decide il lato denso). Il vecchio sweep è in `poison_rate_sweep_benchmark_hybrid_v1_before_tiefix`.
 - **Snopes, denso**: valido, rieseguito dopo la revisione (commit `270c9d6`).
 - **Corpus ufficiale e corpus grande**: validi per il commit usato (denso su revisione, ibrido su `4690d28`).
 
@@ -233,6 +244,47 @@ Disegno di valutazione proposto:
 - da implementare: un dataset ristretto ai claim con variante manuale e l'opzione dell'attacco `corpus_precomputed` per leggere le varianti da `data/handcrafted/`.
 
 Limite da dichiarare: l'insieme manuale sarà piccolo, quindi i risultati sono un caso di studio, non una stima generale.
+
+## 4.10 Verifica dei commit (chiusa il 15 novembre 2026)
+
+Commit `7e5421d` è un commit di sola documentazione (`docs/EXPERIMENTS.md`, 74 righe aggiunte). Il codice è identico a `4690d28`. Quindi i risultati ottenuti con `4690d28` o `7e5421d` sono equivalenti per il retrieval e sono validi: BM25 sul corpus ufficiale (21 run a `4690d28`, 4 a `7e5421d`), BM25 su Snopes (10%, a `7e5421d`), ibrido su Snopes (a `7e5421d` e `c0f20d3`).
+
+Il warning "different git commits" dello script di aggregazione è quindi innocuo in questi casi. Regola da mantenere: prima di aggregare, verificare che ogni commit abbia il codice corretto, con `git diff --stat 4690d28 <commit>`.
+
+La curva BM25 sul corpus ufficiale è stata aggregata con due commit: `4690d28` (correzione del pareggio BM25) e `7e5421d`. Lo stesso `7e5421d` compare, insieme a `c0f20d3`, nel nuovo sweep ibrido su Snopes. Prima di citare i valori va verificato per ogni run quale commit ha prodotto il risultato, e che la differenza tra i due commit non tocchi il retrieval BM25 né il tie-break. Se `7e5421d` contiene solo documenti, i valori restano validi; altrimenti le run con `7e5421d` vanno rifatte con `4690d28`.
+
+## 4.11 Testo delle box della slide (15 novembre 2026)
+
+Testo da usare nella slide di sintesi. Ogni affermazione è legata ai numeri delle sezioni 3 e 4. Il valore 10% è nominale: la quota reale di documenti avvelenati è circa il 15%.
+
+Riga sotto il titolo: "Question: does the model adopt the poisoned information? Retrieval is measured; answer-level measures are pending."
+
+Box 1 (53.8%, PRR@5, Snopes): "At a 10% nominal poison rate (about 15% of documents actually poisoned), over half of queries retrieve at least one poisoned document in the top-5. Most of it is collateral (37.4%) rather than targeted (16.4%). Dense retrieval, template queries."
+
+Box 2 (Multi-Seed & Corpus Validation): "5 seeds per rate; 25 runs per retriever, on 100 cleaned Snopes claims and 300 official-corpus claims (not yet human-validated). When a claim is poisoned, its variant almost always enters the top-5."
+
+Box 3 (RAGAS Judge Calibration Next): "The cosine proxy gives FFR = 0 by construction, so FFR is not reported yet. The Ollama RAGAS judge is integrated; the Source Integrity definition is under review; human-annotation calibration is next."
+
+Grafici: il grafico Snopes (barre impilate) è coerente con la sezione 3.1. Il grafico dei tre retriever (sezione 4.7, 10%) dice che cambiare retriever non protegge il claim attaccato; è consigliato come slide successiva o al posto del box 2.
+
+## 4.12 Replica su claim indipendenti (corpus grande, claim non presenti nel corpus ufficiale)
+
+236 claim verificati veri, in inglese, presenti solo nel corpus grande (Mistral, senza correzioni manuali), quindi disgiunti da tutti quelli usati negli altri sweep. Query v2, retriever denso, 5 seed, commit `f444e3d` (Mac-116). Il retriever denso non è toccato dal bug del pareggio. Quasi tutti i claim vengono da Snopes (circa 96%), quindi la replica è sul corpus, non sulla fonte.
+
+| Tasso | PRR | IC (claims × seed) | PRD@1 | IC | Mirata | Collaterale |
+|---|---|---|---|---|---|---|
+| 1% | 0.063 | [0.010, 0.122] | 0.003 | [0.000, 0.012] | 0.011 | 0.052 |
+| 3% | 0.146 | [0.068, 0.223] | 0.008 | [0.002, 0.019] | 0.030 | 0.116 |
+| 5% | 0.225 | [0.137, 0.312] | 0.013 | [0.003, 0.025] | 0.050 | 0.175 |
+| 10% | 0.375 | [0.297, 0.450] | 0.026 | [0.013, 0.042] | 0.096 | 0.279 |
+
+Confronto con il corpus ufficiale, stesso retriever e stesse query, al 10%: PRR 0.333 [0.300, 0.367], PRD@1 0.041 [0.026, 0.059], mirata 0.095, collaterale 0.239.
+
+Lettura.
+- **Il risultato principale si replica**: l'esposizione mirata è identica (0.096 contro 0.095). Quando un claim è avvelenato la sua variante entra nel top-5 quasi sempre, anche su claim mai usati prima.
+- Il PRR è un po' più alto (0.375 contro 0.333) per la parte collaterale, ma gli intervalli si sovrappongono. Una spiegazione possibile, non verificata: il corpus è più piccolo (236 documenti veri contro 300), quindi ogni top-5 copre una parte più grande del corpus.
+- Il PRD@1 è più basso (0.026 contro 0.041), con intervalli che si sovrappongono in parte: la differenza non è solida. Possibili cause: diversa composizione per categoria, manipolazioni solo Mistral.
+- La variabilità tra seed è alta (deviazione standard del PRR fino a 0.10): con 236 claim il risultato è meno preciso.
 
 ## 5. Limiti e interpretazione
 

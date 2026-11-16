@@ -14,9 +14,22 @@ the nominal poison rate equals the expected share of poisoned claims.
 The claim subsample is fixed (ordered by SHA-256 of item_id); the seed only
 changes which claims receive their poisoned variant.
 
+Answer-level sensitivity (PCS): ``--pcs`` adds the "pcs" metric, so every
+record with a poisoned document in its top-k gets a second, counterfactual
+generation without the poison (eiger/metrics/pcs.py). Output folders get a
+``_pcs`` suffix; retrieval is identical to the run without PCS (same seed,
+same corpus), which doubles as a check.
+
+Multi-element variants: ``--corpus multi2`` / ``multi3`` with ``--k`` uses the
+rule-based variants that change k numbers or years (eiger/datasets/
+multi_element.py; generate data/multi_element/variants.csv first). The same
+claims and seeds are used for every k, so k is compared within claim.
+
 Usage:
     python scripts/make_corpus_sweep.py --seeds 42 43 44 45 46 --max-claims 300
     python scripts/make_corpus_sweep.py --dry-run
+    python scripts/make_corpus_sweep.py --queries genq --pcs --rates 10
+    python scripts/make_corpus_sweep.py --corpus multi2 --queries genq --k 1 --rates 10 50 --pcs
 
 Output: experiments/corpus_sweep_preliminary/<rate>pct_seed<seed>.yaml
         (or experiments/corpus_sweep_reviewed/ with --reviewed-only)
@@ -47,42 +60,66 @@ DATASETS = {
     ("engineering", "genq_all", False): "corpus_claim_engineering_genq_all",
     # Independent replication: claims that are only in the larger corpus.
     ("engineering_extra", "genq", False): "corpus_claim_engineering_extra_genq",
+    # Multi-element variants (k changed numbers/years), same claims for every k.
+    ("multi2", "genq", False): "corpus_claim_official_multi2_genq",
+    ("multi3", "genq", False): "corpus_claim_official_multi3_genq",
 }
 
 # Which corpus file the corpus_precomputed attack reads its manipulations from.
-VARIANT_SOURCE = {"official": "official", "engineering": "engineering", "engineering_extra": "engineering"}
+VARIANT_SOURCE = {
+    "official": "official",
+    "engineering": "engineering",
+    "engineering_extra": "engineering",
+    "multi2": "multi_element",
+    "multi3": "multi_element",
+}
+MAX_K = {"multi2": 2, "multi3": 3}
 
 
 RETRIEVERS = ("dense", "sparse", "hybrid")
 
 
-def sweep_name(corpus: str, queries: str, reviewed_only: bool, retriever: str = "dense") -> str:
+def sweep_name(
+    corpus: str, queries: str, reviewed_only: bool, retriever: str = "dense",
+    pcs: bool = False, k: int | None = None,
+) -> str:
     kind = "reviewed" if reviewed_only else "preliminary"
     # Dense sweeps keep their original folder names, so existing results stay valid.
+    corpus_tag = f"{corpus}_k{k}" if k is not None else corpus
     if retriever == "dense":
-        if corpus == "official" and queries == "template":
+        if corpus == "official" and queries == "template" and not pcs:
             return f"corpus_sweep_{kind}"
-        return f"corpus_sweep_{corpus}_{queries}_{kind}"
-    return f"corpus_sweep_{corpus}_{queries}_{retriever}_{kind}"
+        base = f"corpus_sweep_{corpus_tag}_{queries}"
+    else:
+        base = f"corpus_sweep_{corpus_tag}_{queries}_{retriever}"
+    return f"{base}_pcs_{kind}" if pcs else f"{base}_{kind}"
 
 
 def build_config(
     rate_pct: int, seed: int, max_claims: int, reviewed_only: bool,
     corpus: str = "official", queries: str = "template", retriever: str = "dense",
+    pcs: bool = False, k: int | None = None,
 ) -> dict:
     kind = "reviewed" if reviewed_only else "preliminary"
-    name = sweep_name(corpus, queries, reviewed_only, retriever)
+    name = sweep_name(corpus, queries, reviewed_only, retriever, pcs, k)
     tag = f"{rate_pct}pct_seed{seed}"
+    params: dict = {"variant_source": VARIANT_SOURCE[corpus]}
+    if k is not None:
+        params["k"] = k
     attacks = (
-        [{"name": "corpus_precomputed", "poison_rate": rate_pct / 100,
-          "params": {"variant_source": VARIANT_SOURCE[corpus]}}]
+        [{"name": "corpus_precomputed", "poison_rate": rate_pct / 100, "params": params}]
         if rate_pct > 0 else []
+    )
+    manipulations = (
+        f"rule-based multi-element variants, k={k} changed numbers/years"
+        if k is not None
+        else "collaborator's precomputed manipulations (M01/M02/M04/M06)"
     )
     return {
         "experiment_id": f"{name}_{tag}",
         "description": (
             f"{corpus} corpus sweep ({kind}, {queries} queries, {retriever} retrieval), rate={rate_pct}%, seed={seed}, "
-            "collaborator's precomputed manipulations (M01/M02/M04/M06)."
+            f"{manipulations}." + (" PCS counterfactual generation on." if pcs else "")
             + ("" if reviewed_only else " PRELIMINARY: corpus not yet human-validated.")
         ),
         "seed": seed,
@@ -103,7 +140,7 @@ def build_config(
         },
         "llm": {"backend": "ollama", "model": "llama3.1:8b", "temperature": 0.0, "max_tokens": 512},
         "faithfulness_scorer": "embedding",
-        "metrics": ["ffr", "source_integrity", "ers", "prr", "prd"],
+        "metrics": ["ffr", "source_integrity", "ers", "prr", "prd"] + (["pcs"] if pcs else []),
         "output_dir": f"results/{name}/{tag}/",
     }
 
@@ -115,9 +152,15 @@ def main() -> int:
     parser.add_argument("--reviewed-only", action="store_true")
     parser.add_argument("--retriever", choices=RETRIEVERS, default="dense",
                         help="retrieval method; sparse = BM25, hybrid = dense + BM25 fused with RRF")
-    parser.add_argument("--corpus", choices=["official", "engineering", "engineering_extra"],
+    parser.add_argument("--corpus", choices=["official", "engineering", "engineering_extra", "multi2", "multi3"],
                         default="official",
-                        help="engineering_extra = claims only in the larger corpus (disjoint from official)")
+                        help="engineering_extra = claims only in the larger corpus (disjoint from official); "
+                             "multi2/multi3 = official claims with >= 2/3 numeric elements, rule-based "
+                             "variants changing --k of them")
+    parser.add_argument("--k", type=int, help="multi2/multi3 only: number of changed elements")
+    parser.add_argument("--pcs", action="store_true",
+                        help="add the PCS metric (counterfactual generation without the poison)")
+    parser.add_argument("--rates", type=int, nargs="+", default=RATES, help=f"poison rates in %% (default {RATES})")
     parser.add_argument("--queries", choices=["template", "genq", "genq_all"], default="template",
                         help="template 'Is it true that ...?'; genq = neutral generated queries (v2, "
                              "numeric-leak rows excluded); genq_all = same, leak rows kept (sensitivity)")
@@ -128,11 +171,19 @@ def main() -> int:
         parser.error("only the official corpus has human-reviewed rows")
     if (args.corpus, args.queries, args.reviewed_only) not in DATASETS:
         parser.error(f"combination not available: corpus={args.corpus}, queries={args.queries}")
-    out_dir = REPO / "experiments" / sweep_name(args.corpus, args.queries, args.reviewed_only, args.retriever)
+    if args.corpus in MAX_K:
+        if args.k is None or not 1 <= args.k <= MAX_K[args.corpus]:
+            parser.error(f"--corpus {args.corpus} needs --k between 1 and {MAX_K[args.corpus]}")
+    elif args.k is not None:
+        parser.error("--k is only for --corpus multi2/multi3")
+    out_dir = REPO / "experiments" / sweep_name(
+        args.corpus, args.queries, args.reviewed_only, args.retriever, args.pcs, args.k
+    )
     planned = [
         (out_dir / f"{rate}pct_seed{seed}.yaml",
-         build_config(rate, seed, args.max_claims, args.reviewed_only, args.corpus, args.queries, args.retriever))
-        for rate in RATES
+         build_config(rate, seed, args.max_claims, args.reviewed_only, args.corpus, args.queries,
+                      args.retriever, args.pcs, args.k))
+        for rate in args.rates
         for seed in args.seeds
     ]
     for path, cfg in planned:
@@ -145,7 +196,8 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     header = (
         "# GENERATED by scripts/make_corpus_sweep.py — do not edit by hand.\n"
-        f"# Corpus: {args.corpus}; queries: {args.queries}.\n"
+        f"# Corpus: {args.corpus}; queries: {args.queries}"
+        + (f"; k={args.k}" if args.k is not None else "") + ("; PCS on" if args.pcs else "") + ".\n"
         + ("" if args.reviewed_only else "# PRELIMINARY: corpus not yet human-validated.\n")
     )
     for path, cfg in planned:

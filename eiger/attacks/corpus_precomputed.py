@@ -32,6 +32,9 @@ Variant source
 ``params: {variant_source: official}`` (default) reads
 ``corpus_claim_official/Modified_Claims`` (manually curated). ``engineering``
 reads ``corpus_claim/rag_claims_engineering.csv`` (Mistral-only, larger).
+``multi_element`` reads ``data/multi_element/variants.csv`` (rule-based
+changes to k numbers or years, see eiger/datasets/multi_element.py) and
+needs ``k``: ``params: {variant_source: multi_element, k: 2}``.
 
 ERS
 ----
@@ -61,6 +64,7 @@ from eiger.datasets.corpus_claim_engineering import (
     load_engineering_variant_index,
 )
 from eiger.datasets.corpus_claim_official import DEFAULT_CORPUS_DIR, load_modified_index
+from eiger.datasets.multi_element import DEFAULT_MULTI_ELEMENT_FILE, load_multi_element_index
 
 _FORBIDDEN_CATEGORIES = frozenset({"M03", "M05"})
 
@@ -68,6 +72,11 @@ _FORBIDDEN_CATEGORIES = frozenset({"M03", "M05"})
 @lru_cache(maxsize=4)
 def _cached_index(corpus_dir: str) -> dict[str, dict[str, str]]:
     return load_modified_index(Path(corpus_dir))
+
+
+@lru_cache(maxsize=4)
+def _cached_multi_element_index(path: str) -> dict[tuple[str, int], dict[str, str]]:
+    return load_multi_element_index(Path(path))
 
 
 @lru_cache(maxsize=4)
@@ -93,9 +102,19 @@ class CorpusPrecomputedAttack(BaseAttack):
         elif variant_source == "engineering":
             location = str(Path(kwargs.get("engineering_file") or DEFAULT_ENGINEERING_FILE).resolve())
             row = _cached_engineering_index(location).get(document.claim_id)
+        elif variant_source == "multi_element":
+            if "k" not in kwargs:
+                raise IngestionError(
+                    "variant_source 'multi_element' needs the number of changed elements 'k'."
+                )
+            source = kwargs.get("multi_element_file") or DEFAULT_MULTI_ELEMENT_FILE
+            location = str(Path(source).resolve())
+            index = _cached_multi_element_index(location)
+            row = index.get((document.claim_id, int(kwargs["k"])))
         else:
             raise IngestionError(
-                f"Unknown variant_source '{variant_source}' (expected 'official' or 'engineering')."
+                f"Unknown variant_source '{variant_source}' "
+                "(expected 'official', 'engineering' or 'multi_element')."
             )
         if row is None:
             raise IngestionError(
@@ -125,7 +144,8 @@ class CorpusPrecomputedAttack(BaseAttack):
                 "human_review_status": row.get("human_review_status", ""),
                 "no_op": row["claim_text"] == document.text,
                 "variant_source": variant_source,
-            },
+            }
+            | ({"k": int(kwargs["k"])} if variant_source == "multi_element" else {}),
             original_text=document.text,
             annotation=None,
             sensitivity_class=document.sensitivity_class,

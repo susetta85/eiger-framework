@@ -174,3 +174,21 @@ extraction explicitly flagged `needs_manual_check: True`).
 
 `data/` (both the raw export and the enriched output) is gitignored —
 not ours to redistribute and too large for Git.
+
+## November 2026 campaign tools (see docs/EXPERIMENTS.md, section 4.13)
+
+- `contradiction_audit.py` — defence audit on saved results: NLI contradiction
+  between retrieved documents, threshold calibrated on the 0% runs. No
+  generation, no Ollama.
+- `analyze_answers.py` — per-record PCS by exposure (own variant vs
+  collateral) and, with `--nli`, adoption of the variant in the answer; several
+  `--sweep LABEL=DIR` give paired differences (multi-element comparison).
+- `calibration_kit.py` — `sample` (two blind workbooks for two annotators),
+  `score` (automatic scores kept apart), `compare` (Cohen's kappa between
+  annotators, then automatic scorers against their consensus).
+- `make_multi_element_variants.py` — rule-based variants changing k = 1, 2, 3
+  numbers or years (no language model). Writes the git-ignored
+  `data/multi_element/variants.csv`; check the printed SHA-256 against
+  docs/EXPERIMENTS.md section 4.13.
+- `make_corpus_sweep.py --pcs`, `--rates`, `--corpus multi2|multi3 --k K` —
+  configs for the PCS and multi-element sweeps.

@@ -677,3 +677,43 @@ def test_calibration_statistics() -> None:
         and kit._clean("Sì") == "sì"
     )
     assert kit.main(["sample", "--results-dir", "/nonexistent", "--out-prefix", "/tmp/x"]) == 1
+
+
+def test_contradiction_audit_near_duplicate_filter(tmp_path: Path, capsys) -> None:
+    audit = _load("contradiction_audit")
+    assert audit.token_overlap("", "") == 0.0
+    assert audit.token_overlap("Rate was 21 in 2020", "Rate was 20 in 2020") == pytest.approx(4 / 6)
+    clean = [
+        record(
+            f"C{i}",
+            [
+                hit(1, "ground_truth", f"C{i}", f"fact {i} alpha"),
+                hit(2, "ground_truth", "Z", "other fact beta 7"),
+            ],
+        )
+        for i in range(10)
+    ]
+    own = record(
+        "A",
+        [
+            hit(1, "poisoned", "A", "Rate was 21 in 2020"),
+            hit(2, "ground_truth", "A", "Rate was 20 in 2020"),
+        ],
+    )
+    _write_run(tmp_path, "0pct_seed42", clean)
+    _write_run(tmp_path, "10pct_seed42", [own])
+    nli = make_nli()
+    unfiltered = audit.score_record(clean[0], nli)
+    filtered = audit.score_record(clean[0], nli, min_overlap=0.4)
+    assert (
+        unfiltered["n_pairs"] == 1
+        and filtered["n_pairs"] == 0
+        and filtered["max_contradiction"] == 0.0
+    )
+    assert audit.score_record(own, nli, min_overlap=0.4)["max_contradiction"] == 0.9
+    assert audit.main(["--results-dir", str(tmp_path), "--min-overlap", "0.4"], nli=nli) == 0
+    out = capsys.readouterr().out
+    assert "near-duplicate pairs only (word Jaccard >= 0.4)" in out
+    assert (tmp_path / "contradiction_audit_overlap0.4.md").is_file()
+    assert (tmp_path / "contradiction_audit_overlap0.4_records.csv").is_file()
+    assert not (tmp_path / "contradiction_audit.md").exists()

@@ -40,12 +40,25 @@ Usage
 
 Writes ``contradiction_audit.md`` and ``contradiction_audit_records.csv`` into
 the results directory.
+
+Near-duplicate filter (``--min-overlap``)
+----------------------------------------
+NLI models trained on SNLI/MNLI often label two unrelated sentences as a
+contradiction. Over all pairs of a top-k, almost every clean record then has
+one high-scoring pair (first check, 16 November 2026: 95% of clean records
+above 0.5, calibrated threshold 0.998). A variant and its true document,
+instead, are near-duplicates: in the official corpus 98.6% of (truth, variant)
+pairs have word Jaccard >= 0.4, while two random claims never reach 0.34. With
+``--min-overlap 0.4`` only near-duplicate pairs are scored. A real system can
+compute this, so it needs no knowledge of claim ids. Outputs then get an
+``_overlap<value>`` suffix, so the all-pairs report is not overwritten.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import re
 import statistics
 import sys
 from collections import defaultdict
@@ -73,15 +86,30 @@ def record_group(info: dict[str, Any]) -> str:
     return str(info["category"])
 
 
-def record_pairs(record: dict[str, Any]) -> list[tuple[int, int, str, str, bool]]:
+_WORD = re.compile(r"\w+")
+
+
+def token_overlap(text_a: str, text_b: str) -> float:
+    """Jaccard similarity of lower-cased word sets (0 when both are empty)."""
+    a, b = set(_WORD.findall(text_a.lower())), set(_WORD.findall(text_b.lower()))
+    return len(a & b) / len(a | b) if a | b else 0.0
+
+
+def record_pairs(
+    record: dict[str, Any], min_overlap: float | None = None
+) -> list[tuple[int, int, str, str, bool]]:
     """
     (rank_a, rank_b, text_a, text_b, same_claim_variant) for every unordered pair
     of retrieved documents. ``same_claim_variant`` marks a (truth, variant) pair
-    of the same claim, whichever claim it is.
+    of the same claim, whichever claim it is. With ``min_overlap``, only pairs
+    whose word Jaccard reaches it (near-duplicates) are kept.
     """
     out = []
     for a, b in combinations(ordered_hits(record), 2):
         da, db = hit_doc(a), hit_doc(b)
+        text_a, text_b = str(da.get("text", "")), str(db.get("text", ""))
+        if min_overlap is not None and token_overlap(text_a, text_b) < min_overlap:
+            continue
         same = da.get("claim_id") == db.get("claim_id") and is_poisoned(a) != is_poisoned(b)
         out.append(
             (
@@ -95,19 +123,23 @@ def record_pairs(record: dict[str, Any]) -> list[tuple[int, int, str, str, bool]
     return out
 
 
-def prefetch(records: list[dict[str, Any]], nli: NLIScorer) -> None:
+def prefetch(
+    records: list[dict[str, Any]], nli: NLIScorer, min_overlap: float | None = None
+) -> None:
     """Score every pair of every record in batches (both directions), filling the cache."""
     pairs: list[tuple[str, str]] = []
     for record in records:
-        for _, _, ta, tb, _ in record_pairs(record):
+        for _, _, ta, tb, _ in record_pairs(record, min_overlap):
             pairs += [(ta, tb), (tb, ta)]
     nli.scores(pairs)
 
 
-def score_record(record: dict[str, Any], nli: NLIScorer) -> dict[str, Any]:
+def score_record(
+    record: dict[str, Any], nli: NLIScorer, min_overlap: float | None = None
+) -> dict[str, Any]:
     """Classify the record and attach its NLI contradiction scores."""
     info = classify(record)
-    pairs = record_pairs(record)
+    pairs = record_pairs(record, min_overlap)
     scores = [nli.symmetric_contradiction(ta, tb) for _, _, ta, tb, _ in pairs]
     same = [s for s, p in zip(scores, pairs) if p[4]]
     own_pair = None
@@ -208,6 +240,11 @@ def main(argv: list[str] | None = None, nli: NLIScorer | None = None) -> int:
     parser.add_argument(
         "--model", default=None, help="NLI model (default: the Source Integrity model)"
     )
+    parser.add_argument(
+        "--min-overlap",
+        type=float,
+        help="score only near-duplicate pairs (word Jaccard >= this; 0.4 recommended)",
+    )
     args = parser.parse_args(argv)
 
     runs = [r for r in find_runs(args.results_dir) if not args.rates or r[0] in args.rates]
@@ -219,20 +256,26 @@ def main(argv: list[str] | None = None, nli: NLIScorer | None = None) -> int:
     rows: list[dict[str, Any]] = []
     for rate, seed, path in runs:
         records = load_records(path)[: args.max_records]
-        prefetch(records, nli)
+        prefetch(records, nli, args.min_overlap)
         for record in records:
-            rows.append({"rate": rate, "seed": seed} | score_record(record, nli))
+            rows.append({"rate": rate, "seed": seed} | score_record(record, nli, args.min_overlap))
         print(
             f"{path.parent.name}: {len(records)} records, NLI cache {nli.cache_size} pairs",
             file=sys.stderr,
         )
 
     calibrated = calibrate_threshold(rows, args.fpr)
+    pair_set = (
+        "all pairs"
+        if args.min_overlap is None
+        else f"near-duplicate pairs only (word Jaccard >= {args.min_overlap})"
+    )
     lines = [
         f"# Contradiction audit: {args.results_dir}",
         "",
-        f"NLI model: {nli.model_name}. Runs: {len(runs)}. Records: {len(rows)}. "
-        "Score per record = max over retrieved-document pairs of max(P(contr.|a,b), P(contr.|b,a)).",
+        f"NLI model: {nli.model_name}. Runs: {len(runs)}. Records: {len(rows)}. Pairs: {pair_set}. "
+        "Score per record = max over retrieved-document pairs of max(P(contr.|a,b), P(contr.|b,a)); "
+        "0 when no pair is scored.",
         "",
     ]
     if calibrated is None:
@@ -255,9 +298,10 @@ def main(argv: list[str] | None = None, nli: NLIScorer | None = None) -> int:
     report = "\n".join(lines)
     print(report)
 
-    out_md = args.results_dir / "contradiction_audit.md"
+    suffix = "" if args.min_overlap is None else f"_overlap{args.min_overlap:g}"
+    out_md = args.results_dir / f"contradiction_audit{suffix}.md"
     out_md.write_text(report + "\n", encoding="utf-8")
-    out_csv = args.results_dir / "contradiction_audit_records.csv"
+    out_csv = args.results_dir / f"contradiction_audit{suffix}_records.csv"
     with out_csv.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=list(rows[0]))
         writer.writeheader()

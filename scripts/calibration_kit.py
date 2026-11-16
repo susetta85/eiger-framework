@@ -355,11 +355,24 @@ def compare(
     auto: dict[str, dict[str, float]],
 ) -> list[str]:
     ids = [i["item_id"] for i in key["items"] if i["item_id"] in a and i["item_id"] in b]
+
+    def filled(row: dict[str, Any]) -> bool:
+        return any(_clean(row.get(f)) is not None for f in CATEGORICAL + LIKERT)
+
+    both = sum(1 for i in ids if filled(a[i]) and filled(b[i]))
     lines = [
         "# Calibration report",
         "",
-        f"Items annotated by both: {len(ids)} of {len(key['items'])}.",
+        f"Items annotated by both (at least one answer each): {both} of {len(key['items'])}.",
         "",
+    ]
+    if both == 0:
+        lines += [
+            "WARNING: the workbooks have no answers yet. Run compare after the annotators "
+            "have filled them in.",
+            "",
+        ]
+    lines += [
         "## Agreement between annotators",
         "",
         "| Field | Items | Raw agreement | Kappa |",

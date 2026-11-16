@@ -640,6 +640,8 @@ def test_calibration_kit_full_cycle(tmp_path: Path, capsys) -> None:
     report = capsys.readouterr().out
     assert "Agreement between annotators" in report and "NLI entails variant" in report
     assert "Spearman" in report
+    assert f"(at least one answer each): {len(ids) - 1} of {len(ids)}." in report
+    assert "WARNING" not in report
     assert Path(f"{prefix}_report.md").is_file()
     # Missing automatic file: comparison still runs.
     assert (
@@ -677,6 +679,15 @@ def test_calibration_statistics() -> None:
         and kit._clean("Sì") == "sì"
     )
     assert kit.main(["sample", "--results-dir", "/nonexistent", "--out-prefix", "/tmp/x"]) == 1
+
+
+def test_calibration_compare_empty_workbooks() -> None:
+    kit = _load("calibration_kit")
+    key = {"items": [{"item_id": "x", "claim_id": "c"}, {"item_id": "y", "claim_id": "d"}]}
+    empty = {i: {f: None for f in kit.CATEGORICAL + kit.LIKERT} for i in ("x", "y")}
+    report = "\n".join(kit.compare(key, empty, empty, {}))
+    assert "(at least one answer each): 0 of 2." in report
+    assert "WARNING: the workbooks have no answers yet" in report
 
 
 def test_contradiction_audit_near_duplicate_filter(tmp_path: Path, capsys) -> None:

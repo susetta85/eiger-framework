@@ -316,6 +316,28 @@ Controllo superato: 142 record con esposizione mirata e 358 solo collaterali, 50
 
 Lettura, preliminare: (1) PCS è piccolo (0,043) e circa la metà nei collaterali, dove può pesare il contesto più corto del controfattuale. (2) Con il veleno la risposta implica il vero meno spesso, circa −0,18; gli intervalli in tabella sono marginali, l'intervallo sulla differenza appaiata si calcola con la versione di `analyze_answers.py` della sezione 4.14. (3) L'adozione NLI non è specifica: la risposta controfattuale, senza veleno, risulta "adottare" la variante nel 21% dei casi. Non va usata come risultato principale finché A3 non dice cosa misura.
 
+**Differenze appaiate e baseline senza attacco (17 novembre, Mac Susy).** Riferimento: le run a 0% di `results/corpus_sweep_official_genq_preliminary/` (stessi claim, contesto completo). Differenze record per record sui 142 record con esposizione mirata, IC 95% bootstrap per claim:
+
+| Differenza | Avvelenata − controfattuale | Avvelenata − senza attacco |
+|---|---|---|
+| P(la risposta implica il vero) | −0,180 [−0,263; −0,099] | −0,195 [−0,275; −0,110] |
+| Adozione NLI della variante | +0,106 [0,023; 0,193] | +0,106 [0,014; 0,196] |
+| P(la risposta implica la variante) | +0,028 [−0,057; 0,118] | +0,024 [−0,060; 0,114] |
+
+| Controllo | Valore |
+|---|---|
+| 1 − sim(risposta, risposta senza attacco), record puliti | 0,002 [0,001; 0,004] (n=1000) |
+| 1 − sim(risposta, risposta senza attacco), esposizione mirata | 0,042 [0,034; 0,049] |
+| 1 − sim(risposta, risposta senza attacco), solo collaterale | 0,024 [0,017; 0,033] |
+| Risposta senza attacco: P(implica il vero) / adozione | 0,598 / 0,211 |
+
+Lettura, preliminare:
+1. Controllo superato: sui record puliti la risposta è praticamente uguale a quella senza attacco (0,002), quindi la generazione è deterministica e le differenze sui record esposti non sono rumore.
+2. Il contesto più corto del controfattuale non spiega i risultati: risposta controfattuale e risposta senza attacco danno quasi gli stessi valori (P(vero) 0,584 contro 0,598; adozione 0,211 in entrambi; PCS 0,043 contro 0,042). Il limite dichiarato in A1 si può ridimensionare. Anche l'effetto collaterale (0,024) resta.
+3. Effetto del veleno: la probabilità che la risposta implichi il vero scende di circa 0,19, con intervallo lontano da zero.
+4. La probabilità che la risposta implichi la variante non sale in modo misurabile (+0,02, intervallo che include zero). L'aumento dell'adozione (+0,11) viene quindi soprattutto dal calo dell'implicazione del vero, che fa scattare la seconda condizione della definizione, non da risposte che affermano la variante. Ipotesi da verificare con A3: con vero e variante nello stesso contesto, la risposta diventa meno netta, più che sbagliata.
+5. L'adozione NLI resta poco specifica (21% anche senza veleno).
+
 **A2. Audit di contraddizione.** `scripts/contradiction_audit.py` sui risultati già salvati, senza Ollama. Per ogni record si confrontano tutte le coppie di documenti del top-5 con il modello NLI di Source Integrity; il punteggio della coppia è il massimo delle due direzioni (NLI non è simmetrico), quello del record il massimo sulle coppie. La soglia è calibrata sui record a 0%, dove non c'è veleno, per avere il 5% di falsi allarmi; si riporta anche la soglia fissa 0.5.
 
 Lettura dei risultati:

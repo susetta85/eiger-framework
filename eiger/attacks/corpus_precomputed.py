@@ -34,7 +34,8 @@ Variant source
 reads ``corpus_claim/rag_claims_engineering.csv`` (Mistral-only, larger).
 ``multi_element`` reads ``data/multi_element/variants.csv`` (rule-based
 changes to k numbers or years, see eiger/datasets/multi_element.py) and
-needs ``k``: ``params: {variant_source: multi_element, k: 2}``.
+needs ``k``: ``params: {variant_source: multi_element, k: 2}``; ``family``
+(default ``num``) picks the variants file (numrand, mix, mixrand).
 
 ERS
 ----
@@ -64,7 +65,7 @@ from eiger.datasets.corpus_claim_engineering import (
     load_engineering_variant_index,
 )
 from eiger.datasets.corpus_claim_official import DEFAULT_CORPUS_DIR, load_modified_index
-from eiger.datasets.multi_element import DEFAULT_MULTI_ELEMENT_FILE, load_multi_element_index
+from eiger.datasets.multi_element import family_file, load_multi_element_index
 
 _FORBIDDEN_CATEGORIES = frozenset({"M03", "M05"})
 
@@ -100,14 +101,16 @@ class CorpusPrecomputedAttack(BaseAttack):
             location = str(Path(kwargs.get("corpus_dir") or DEFAULT_CORPUS_DIR).resolve())
             row = _cached_index(location).get(document.claim_id)
         elif variant_source == "engineering":
-            location = str(Path(kwargs.get("engineering_file") or DEFAULT_ENGINEERING_FILE).resolve())
+            location = str(
+                Path(kwargs.get("engineering_file") or DEFAULT_ENGINEERING_FILE).resolve()
+            )
             row = _cached_engineering_index(location).get(document.claim_id)
         elif variant_source == "multi_element":
             if "k" not in kwargs:
                 raise IngestionError(
                     "variant_source 'multi_element' needs the number of changed elements 'k'."
                 )
-            source = kwargs.get("multi_element_file") or DEFAULT_MULTI_ELEMENT_FILE
+            source = kwargs.get("multi_element_file") or family_file(kwargs.get("family", "num"))
             location = str(Path(source).resolve())
             index = _cached_multi_element_index(location)
             row = index.get((document.claim_id, int(kwargs["k"])))
@@ -145,7 +148,11 @@ class CorpusPrecomputedAttack(BaseAttack):
                 "no_op": row["claim_text"] == document.text,
                 "variant_source": variant_source,
             }
-            | ({"k": int(kwargs["k"])} if variant_source == "multi_element" else {}),
+            | (
+                {"k": int(kwargs["k"]), "family": kwargs.get("family", "num")}
+                if variant_source == "multi_element"
+                else {}
+            ),
             original_text=document.text,
             annotation=None,
             sensitivity_class=document.sensitivity_class,

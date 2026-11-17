@@ -1,5 +1,5 @@
 """
-Calibration kit: check the automatic answer scorers against two human annotators.
+Calibration kit: check the automatic answer scorers against human annotators.
 
 FFR, PCS-based conclusions and NLI adoption all rest on automatic judgements of
 the answers. This kit automates everything around the human step:
@@ -18,7 +18,14 @@ the answers. This kit automates everything around the human step:
                  then agreement of each automatic scorer with the items where
                  the annotators agree.
 
-What stays human: filling in the two workbooks. Do not let anyone annotate with
+With a single annotator: ``compare`` without ``--b`` compares the automatic
+scorers with her labels; ``retest`` writes a second workbook with a subset of
+the items (default 15, new order) to fill at least a week later, and
+``compare --b <retest workbook> --retest`` measures how stable her labels are.
+One annotator plus a retest is weaker than two independent annotators: it
+checks consistency, not whether another person would label the same way.
+
+What stays human: filling in the workbooks. Do not let anyone annotate with
 the automatic file open, and do not use a language model as the second
 annotator: the point is to test the automatic judges against people.
 
@@ -28,6 +35,11 @@ Usage:
     python scripts/calibration_kit.py score --key results/calibration/batch_01_key.json [--ragas]
     python scripts/calibration_kit.py compare --key results/calibration/batch_01_key.json \\
         --a results/calibration/batch_01_annotatore_A.xlsx --b results/calibration/batch_01_annotatore_B.xlsx
+    python scripts/calibration_kit.py compare --key results/calibration/batch_01_key.json \\
+        --a results/calibration/batch_01_annotatore_A.xlsx              # single annotator
+    python scripts/calibration_kit.py retest --key results/calibration/batch_01_key.json --n 15
+    python scripts/calibration_kit.py compare --key results/calibration/batch_01_key.json \\
+        --a results/calibration/batch_01_annotatore_A.xlsx --b results/calibration/batch_01_retest.xlsx --retest
 """
 
 from __future__ import annotations
@@ -351,56 +363,92 @@ def _f(value: float | None) -> str:
 def compare(
     key: dict[str, Any],
     a: dict[str, dict[str, Any]],
-    b: dict[str, dict[str, Any]],
+    b: dict[str, dict[str, Any]] | None,
     auto: dict[str, dict[str, float]],
+    mode: str = "two",
 ) -> list[str]:
-    ids = [i["item_id"] for i in key["items"] if i["item_id"] in a and i["item_id"] in b]
+    """
+    ``mode``: ``two`` (two annotators, consensus = agreement), ``single`` (one
+    annotator, ``b`` is None, her labels are the reference) or ``retest`` (``b``
+    is the same annotator's second pass on a subset: agreement between passes;
+    the first pass is the reference for the automatic scorers).
+    """
 
     def filled(row: dict[str, Any]) -> bool:
         return any(_clean(row.get(f)) is not None for f in CATEGORICAL + LIKERT)
 
-    both = sum(1 for i in ids if filled(a[i]) and filled(b[i]))
-    lines = [
-        "# Calibration report",
-        "",
-        f"Items annotated by both (at least one answer each): {both} of {len(key['items'])}.",
-        "",
-    ]
+    items_a = [i["item_id"] for i in key["items"] if i["item_id"] in a]
+    if b is None:
+        ids = items_a
+        both = sum(1 for i in ids if filled(a[i]))
+        count_line = f"Items annotated (single annotator): {both} of {len(key['items'])}."
+    else:
+        ids = [i for i in items_a if i in b]
+        both = sum(1 for i in ids if filled(a[i]) and filled(b[i]))
+        who = "in both passes" if mode == "retest" else "by both"
+        count_line = f"Items annotated {who} (at least one answer each): {both} of {len(ids) if mode == 'retest' else len(key['items'])}."
+    lines = ["# Calibration report", "", count_line, ""]
     if both == 0:
         lines += [
             "WARNING: the workbooks have no answers yet. Run compare after the annotators "
             "have filled them in.",
             "",
         ]
-    lines += [
-        "## Agreement between annotators",
-        "",
-        "| Field | Items | Raw agreement | Kappa |",
-        "|---|---|---|---|",
-    ]
-    consensus: dict[str, dict[str, Any]] = {i: {} for i in ids}
-    for field in CATEGORICAL + LIKERT:
-        pairs = [(i, _clean(a[i][field]), _clean(b[i][field])) for i in ids]
-        pairs = [(i, x, y) for i, x, y in pairs if x is not None and y is not None]
-        xs, ys = [x for _, x, _ in pairs], [y for _, _, y in pairs]
-        kappa = (
-            cohen_kappa(xs, ys, "quadratic", [1, 2, 3, 4, 5])
-            if field in LIKERT
-            else cohen_kappa(xs, ys)
+    consensus: dict[str, dict[str, Any]] = {}
+    if mode in ("single", "retest"):
+        auto_ids = items_a
+        for i in items_a:
+            consensus[i] = {
+                f: _clean(a[i][f]) for f in CATEGORICAL + LIKERT if _clean(a[i][f]) is not None
+            }
+    else:
+        auto_ids = ids
+        consensus = {i: {} for i in ids}
+    if b is None:
+        lines += [
+            "## Single annotator",
+            "",
+            "No agreement between annotators can be measured: the automatic scorers below are",
+            "compared with one person's labels. Use `retest` (same annotator, a subset, at least",
+            "one week later) to measure how stable her labels are.",
+            "",
+        ]
+    else:
+        title = (
+            "## Agreement between two passes of the same annotator (test-retest)"
+            if mode == "retest"
+            else "## Agreement between annotators"
         )
-        raw = sum(x == y for x, y in zip(xs, ys)) / len(xs) if xs else None
-        lines.append(f"| {field} | {len(xs)} | {_f(raw)} | {_f(kappa)} |")
-        for i, x, y in pairs:
-            if field in LIKERT:
-                consensus[i][field] = (x + y) / 2
-            elif x == y:
-                consensus[i][field] = x
+        lines += [title, "", "| Field | Items | Raw agreement | Kappa |", "|---|---|---|---|"]
+        for field in CATEGORICAL + LIKERT:
+            pairs = [(i, _clean(a[i][field]), _clean(b[i][field])) for i in ids]
+            pairs = [(i, x, y) for i, x, y in pairs if x is not None and y is not None]
+            xs, ys = [x for _, x, _ in pairs], [y for _, _, y in pairs]
+            kappa = (
+                cohen_kappa(xs, ys, "quadratic", [1, 2, 3, 4, 5])
+                if field in LIKERT
+                else cohen_kappa(xs, ys)
+            )
+            raw = sum(x == y for x, y in zip(xs, ys)) / len(xs) if xs else None
+            lines.append(f"| {field} | {len(xs)} | {_f(raw)} | {_f(kappa)} |")
+            if mode == "two":
+                for i, x, y in pairs:
+                    if field in LIKERT:
+                        consensus[i][field] = (x + y) / 2
+                    elif x == y:
+                        consensus[i][field] = x
+    ids = auto_ids
+    reference = {
+        "two": "the consensus",
+        "single": "the annotator's labels",
+        "retest": "the annotator's first pass",
+    }[mode]
     lines += [
         "",
         "Kappa for the 1-5 scales is quadratic-weighted. Consensus = same label (categorical) or the",
         "mean of the two ratings (1-5).",
         "",
-        "## Automatic scorers against the consensus",
+        f"## Automatic scorers against {reference}",
         "",
         "| Automatic | Human | Items | Agreement | Kappa / Spearman |",
         "|---|---|---|---|---|",
@@ -449,6 +497,19 @@ def compare(
     return lines
 
 
+def cmd_retest(args: argparse.Namespace) -> int:
+    """Second workbook for the same annotator: a random subset, in a new order."""
+    key = json.loads(Path(args.key).read_text(encoding="utf-8"))
+    items = random.Random(args.seed).sample(key["items"], min(args.n, len(key["items"])))
+    out = Path(args.key).with_name(Path(args.key).name.replace("_key.json", "_retest.xlsx"))
+    write_workbook(items, out, args.seed + 1)
+    print(f"Retest workbook with {len(items)} items: {out}")
+    print(
+        "Give it to the same annotator at least one week after the first pass, without the first sheet."
+    )
+    return 0
+
+
 def cmd_compare(args: argparse.Namespace) -> int:
     key = json.loads(Path(args.key).read_text(encoding="utf-8"))
     auto_path = (
@@ -457,7 +518,12 @@ def cmd_compare(args: argparse.Namespace) -> int:
         else Path(args.key).with_name(Path(args.key).name.replace("_key.json", "_automatic.json"))
     )
     auto = json.loads(auto_path.read_text(encoding="utf-8")) if auto_path.is_file() else {}
-    report = "\n".join(compare(key, read_workbook(Path(args.a)), read_workbook(Path(args.b)), auto))
+    if args.retest and not args.b:
+        print("--retest needs --b (the second pass)", file=sys.stderr)
+        return 1
+    mode = "retest" if args.retest else ("two" if args.b else "single")
+    b = read_workbook(Path(args.b)) if args.b else None
+    report = "\n".join(compare(key, read_workbook(Path(args.a)), b, auto, mode))
     print(report)
     out = Path(args.key).with_name(Path(args.key).name.replace("_key.json", "_report.md"))
     out.write_text(report + "\n", encoding="utf-8")
@@ -484,10 +550,21 @@ def main(argv: list[str] | None = None) -> int:
     m = sub.add_parser("compare")
     m.add_argument("--key", required=True)
     m.add_argument("--a", required=True)
-    m.add_argument("--b", required=True)
+    m.add_argument("--b", help="second annotator; omit for a single annotator")
+    m.add_argument("--retest", action="store_true", help="--b is the same annotator's second pass")
+    r = sub.add_parser("retest")
+    r.add_argument("--key", required=True)
+    r.add_argument("--n", type=int, default=15)
+    r.add_argument("--seed", type=int, default=7)
     m.add_argument("--automatic", help="default: <prefix>_automatic.json")
     args = parser.parse_args(argv)
-    return {"sample": cmd_sample, "score": cmd_score, "compare": cmd_compare}[args.command](args)
+    commands = {
+        "sample": cmd_sample,
+        "score": cmd_score,
+        "compare": cmd_compare,
+        "retest": cmd_retest,
+    }
+    return commands[args.command](args)
 
 
 if __name__ == "__main__":

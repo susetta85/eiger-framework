@@ -40,6 +40,8 @@ Currently registered datasets
     is not a public corpus).
   - CorpusClaimOfficialMulti2Dataset / Multi3Dataset
     ("corpus_claim_official_multi2_genq", "corpus_claim_official_multi3_genq")
+  - Multi2NumRand / Multi2Mix / Multi2MixRand: same design, other variant
+    families (random magnitude; places, months, scale and direction words).
     — official-corpus claims with >= 2 or >= 3 numeric elements, poisoned
     with rule-based variants that change k of them
     (eiger.datasets.multi_element). Need data/multi_element/variants.csv,
@@ -89,6 +91,9 @@ from eiger.datasets.factcheck import FactCheckDataset
 from eiger.datasets.json_fixture import JSONFixtureDataset
 from eiger.datasets.multi_element import (
     CorpusClaimOfficialMulti2Dataset,
+    CorpusClaimOfficialMulti2MixDataset,
+    CorpusClaimOfficialMulti2MixRandDataset,
+    CorpusClaimOfficialMulti2NumRandDataset,
     CorpusClaimOfficialMulti3Dataset,
 )
 from eiger.datasets.politifact import PolitiFactDataset
@@ -119,6 +124,9 @@ register_dataset(CorpusClaimEngineeringGenQAllDataset)
 register_dataset(CorpusClaimEngineeringExtraGenQDataset)
 register_dataset(CorpusClaimOfficialMulti2Dataset)
 register_dataset(CorpusClaimOfficialMulti3Dataset)
+register_dataset(CorpusClaimOfficialMulti2NumRandDataset)
+register_dataset(CorpusClaimOfficialMulti2MixDataset)
+register_dataset(CorpusClaimOfficialMulti2MixRandDataset)
 
 # ─── Public API declaration ───────────────────────────────────────────────────
 
@@ -145,4 +153,7 @@ __all__ = [
     "CorpusClaimEngineeringExtraGenQDataset",
     "CorpusClaimOfficialMulti2Dataset",
     "CorpusClaimOfficialMulti3Dataset",
+    "CorpusClaimOfficialMulti2NumRandDataset",
+    "CorpusClaimOfficialMulti2MixDataset",
+    "CorpusClaimOfficialMulti2MixRandDataset",
 ]

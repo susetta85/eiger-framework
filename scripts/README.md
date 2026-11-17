@@ -192,3 +192,19 @@ not ours to redistribute and too large for Git.
   docs/EXPERIMENTS.md section 4.13.
 - `make_corpus_sweep.py --pcs`, `--rates`, `--corpus multi2|multi3 --k K` —
   configs for the PCS and multi-element sweeps.
+
+Second campaign (docs/EXPERIMENTS.md, section 4.14):
+
+- `make_multi_element_variants.py --all` — four variant families: `num`
+  (unchanged), `numrand` (same elements, random magnitude), `mix` (numbers,
+  US states, countries, months, scale and direction words, fixed rule),
+  `mixrand` (same elements as `mix`, random replacement). One file and one
+  SHA-256 each. Person names are not a kind (attribution switch, M03).
+- `make_corpus_sweep.py --corpus multi2_numrand|multi2_mix|multi2_mixrand --k K`;
+  baselines: `--corpus-variants` (official corpus variant on the same claims),
+  `--rates 0 --seeds 42` (no attack), `--retriever sparse|hybrid`.
+- `analyze_answers.py --noattack DIR` (answers of a 0% run as reference),
+  within-sweep paired differences (poisoned − counterfactual, poisoned − no
+  attack), `--by-kind` (records split by kind of changed element).
+- `calibration_kit.py compare` without `--b` (single annotator), `retest`
+  (second pass on a subset) and `compare --retest`.

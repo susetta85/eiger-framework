@@ -288,7 +288,7 @@ Lettura.
 
 ## 4.13 Campagna di novembre: misure sulla risposta e varianti a più elementi (piano, 15 novembre 2026)
 
-Due campagne, preparate il 15 novembre. Nessun risultato ancora: questa sezione descrive cosa si esegue, dove e come si legge.
+Due campagne, preparate il 15 novembre ed eseguite il 16 sul Mac di Susy (A1, A2, `multi3`) e su quello di Domenico (`multi2`). I risultati sono nelle sottosezioni "Risultati"; sono preliminari, perché le misure sulla risposta non sono ancora calibrate (A3).
 
 ### Campagna A: misure sulla risposta e difesa
 
@@ -297,6 +297,24 @@ Due campagne, preparate il 15 novembre. Nessun risultato ancora: questa sezione 
 Analisi: `scripts/analyze_answers.py`. Il runner salva solo la media di PCS su tutti i record, che include gli zeri dei record senza veleno; lo script ricalcola PCS per record e lo riporta separato per esposizione mirata (variante del proprio claim nel top-5) e collaterale. Con `--nli` misura anche l'**adozione**: la risposta implica la variante (P(implicazione) > 0.5 e maggiore di quella del fatto vero)? Lo stesso per la risposta controfattuale; la differenza è l'effetto del veleno sulla risposta.
 
 Limiti da dichiarare: PCS e adozione NLI sono automatiche e non ancora calibrate (A3); la risposta controfattuale ha un contesto più corto (si tolgono documenti senza sostituirli), quindi parte del cambiamento può dipendere dalla lunghezza.
+
+#### Risultati A1 (16 novembre, Mac Susy, codice `7034901`, 5 run, 1.500 record)
+
+Controllo superato: 142 record con esposizione mirata e 358 solo collaterali, 500 su 1.500, PRR 0,333 come nello sweep denso.
+
+| Misura (10%) | Valore [IC 95%, bootstrap per claim] |
+|---|---|
+| Variante del proprio claim nel top-5 | 0,095 [0,079; 0,109] (n=1500) |
+| Variante sopra il vero (dato esposizione) | 0,437 [0,345; 0,525] (n=142) |
+| Variante al primo posto | 0,040 [0,029; 0,051] (n=1500) |
+| PCS, esposizione mirata | 0,043 [0,034; 0,053] (n=142) |
+| PCS, solo collaterale | 0,022 [0,015; 0,029] (n=358) |
+| Adozione NLI, risposta reale | 0,317 [0,232; 0,411] (n=142) |
+| Adozione NLI, risposta controfattuale | 0,211 [0,135; 0,293] (n=142) |
+| P(risposta reale implica il vero) | 0,404 [0,321; 0,490] (n=142) |
+| P(risposta controfattuale implica il vero) | 0,584 [0,492; 0,671] (n=142) |
+
+Lettura, preliminare: (1) PCS è piccolo (0,043) e circa la metà nei collaterali, dove può pesare il contesto più corto del controfattuale. (2) Con il veleno la risposta implica il vero meno spesso, circa −0,18; gli intervalli in tabella sono marginali, l'intervallo sulla differenza appaiata si calcola con la versione di `analyze_answers.py` della sezione 4.14. (3) L'adozione NLI non è specifica: la risposta controfattuale, senza veleno, risulta "adottare" la variante nel 21% dei casi. Non va usata come risultato principale finché A3 non dice cosa misura.
 
 **A2. Audit di contraddizione.** `scripts/contradiction_audit.py` sui risultati già salvati, senza Ollama. Per ogni record si confrontano tutte le coppie di documenti del top-5 con il modello NLI di Source Integrity; il punteggio della coppia è il massimo delle due direzioni (NLI non è simmetrico), quello del record il massimo sulle coppie. La soglia è calibrata sui record a 0%, dove non c'è veleno, per avere il 5% di falsi allarmi; si riporta anche la soglia fissa 0.5.
 
@@ -311,6 +329,31 @@ Differenza rispetto al piano in 4.8: lì si proponeva di usare solo coppie con l
 
 **Filtro dei quasi duplicati** (`--min-overlap 0.4`). Una variante e il suo vero sono quasi duplicati: nel corpus ufficiale il 98,6% delle coppie vero–variante ha sovrapposizione di parole (Jaccard) ≥ 0,4, mentre due claim presi a caso non superano mai 0,33. Con il filtro si valutano solo le coppie quasi duplicate. Un sistema reale può calcolarlo, quindi resta un rilevatore realistico, senza bisogno dei `claim_id`. I file di output prendono il suffisso `_overlap0.4` e non sovrascrivono il rapporto su tutte le coppie. Si eseguono entrambe le versioni e si riportano tutte e due.
 
+#### Risultati A2 (16 novembre, Mac Susy, 25 run, 7.500 record, corpus ufficiale, query v2, denso)
+
+Tutte le coppie:
+
+| Tasso | Rilevabili (vero e variante nel top-5) | Rilevati, soglia calibrata 0,998 | Coppia vero–variante: P(contr.) media | Coppia sopra 0,5 |
+|---|---|---|---|---|
+| 1% | 22/22 | 0/22 | 0,424 | 45% (10/22) |
+| 3% | 49/49 | 0/49 | 0,424 | 45% (22/49) |
+| 5% | 73/75 | 0/73 | 0,391 | 41% (30/73) |
+| 10% | 139/142 | 2/139 (1,4%) | 0,374 | 38% (53/139) |
+
+Falsi allarmi sui puliti: 5% alla soglia calibrata (per costruzione), 98,7% alla soglia fissa 0,5. Il retrieval porta quasi sempre nel top-5 sia la variante sia il vero; il limite è il modello NLI, che anche sulla coppia giusta vede il numero cambiato come contraddizione in meno della metà dei casi. Su tutte le coppie, come difesa, non funziona.
+
+Solo coppie quasi duplicate (`--min-overlap 0.4`):
+
+| Tasso | Falsi allarmi (puliti) | Rilevati tra gli esposti: qualunque coppia quasi duplicata | Rilevati: coppia quasi duplicata e P(contr.) > 0,5 | Collaterali segnalati |
+|---|---|---|---|---|
+| 0% | 1,0% (15/1500) | – | – | – |
+| 1% | 1,1% | 100% (22/22) | 45% (10/22) | 64% |
+| 3% | 1,1% | 100% (49/49) | 45% (22/49) | 62% |
+| 5% | 1,2% | 96% (72/75) | 41% (31/75) | 65% |
+| 10% | 1,4% | 98% (139/142) | 42% (60/142) | 74% |
+
+La soglia calibrata risulta 0,000 perché il 99% dei record puliti non ha coppie quasi duplicate: il rilevatore segnala ogni record con una coppia quasi duplicata. A rilevare è il segnale strutturale, non il giudizio NLI. I collaterali segnalati non sono falsi allarmi (il loro top-5 contiene vero e variante di un altro claim). Limite: vale per varianti che sono modifiche minime del vero; varianti scritte diversamente avrebbero sovrapposizione più bassa (da verificare con le varianti scritte a mano, 4.9).
+
 **A3. Calibrazione.** `scripts/calibration_kit.py`, in tre passi:
 1. `sample`: 50 record dallo sweep PCS al 10% (30 con esposizione mirata, 10 collaterale, 10 puliti; un record per claim). Produce due fogli Excel identici nel contenuto ma in ordine diverso, uno per annotatore, con menu a tendina e un foglio di istruzioni. Nessun punteggio automatico nei fogli.
 2. `score`: calcola a parte i punteggi automatici (NLI, proxy di embedding salvato nel record, e con `--ragas` il giudice RAGAS via Ollama).
@@ -319,6 +362,8 @@ Differenza rispetto al piano in 4.8: lì si proponeva di usare solo coppie con l
 Domande per l'annotatore: la risposta afferma il fatto vero? afferma il dettaglio cambiato nella variante? quanto è sostenuta dal contesto (1–5)? quanto è corretta rispetto al fatto vero (1–5)?
 
 Cosa resta umano: compilare i due fogli. Gli annotatori lavorano separati, senza vedere i punteggi automatici, e non si usa un modello linguistico come secondo annotatore: lo scopo è proprio verificare i giudici automatici contro le persone. Con kappa tra annotatori sotto circa 0.6 va rivisto il codebook prima di giudicare le misure automatiche. Le soglie di FFR (fedeltà > 0.8, correttezza < 0.2) si fissano solo dopo questo confronto.
+
+**Stato (16–17 novembre, Mac Susy).** `sample` e `score` fatti: 50 record (30/10/10, disponibili 142/358/1.000), seme 42, in `results/calibration/a3_batch01_*`. Annota una sola persona, la collega: la procedura per un'annotatrice sola è nella sezione 4.14. Domanda specifica emersa da A1: l'adozione NLI segnala anche risposte senza veleno; il confronto con le etichette deve dire se va scartata o ridefinita.
 
 ### Campagna B: varianti a più elementi
 
@@ -345,18 +390,121 @@ Analisi: `scripts/analyze_answers.py --sweep k1=... --sweep k2=...` riporta per 
 
 Rapporto con le varianti scritte a mano (4.9): sono due cose diverse. Le varianti a regole misurano l'effetto del numero di elementi cambiati con un disegno controllato. Le varianti a mano restano un caso di studio separato, con le condizioni della sezione 4.9.
 
-### Divisione del lavoro
+#### Risultati `multi3` (16 novembre, Mac Susy, 30 run, 66 claim)
 
-| Mac | Prima (in corso) | Poi |
-|---|---|---|
-| Susy | sweep attuali | A1 PCS (5 run), poi B `multi3` (30 run); A2 audit quando Ollama è libero |
-| Domenico | BM25 Snopes (25 run) | B `multi2` (20 run) |
+k=1 e k=2 in un primo lancio, k=3 in un secondo (finito alle 15:29), stesso codice. Differenze appaiate rispetto a k=1, IC 95% bootstrap per claim:
 
-A3 parte dopo A1: serve lo sweep PCS per il campione.
+| Misura | 50%: k2 − k1 | 50%: k3 − k1 | 10%: k3 − k1 |
+|---|---|---|---|
+| Variante nel top-5 | 0,000 | +0,003 [−0,009; 0,018] | 0,000 |
+| Variante sopra il vero (dato esposizione) | −0,033 [−0,170; 0,099] | −0,100 [−0,245; 0,029] | 0,000 [−0,229; 0,200] (n=37) |
+| Variante al primo posto | −0,006 [−0,064; 0,052] | −0,039 [−0,103; 0,021] | +0,003 [−0,018; 0,027] |
+| PCS, esposizione mirata | +0,003 [−0,005; 0,010] | +0,002 [−0,006; 0,010] | +0,007 [−0,007; 0,021] |
+| Adozione NLI | −0,086 [−0,200; 0,028] | −0,053 [−0,191; 0,079] | −0,027 [−0,167; 0,108] |
+| P(risposta implica il vero) | **−0,138 [−0,216; −0,053]** | **−0,152 [−0,260; −0,046]** | **−0,178 [−0,334; −0,034]** |
+| P(controfattuale implica il vero) | −0,010 [−0,035; 0,013] | −0,004 [−0,032; 0,023] | 0,000 |
+
+Valori assoluti al 50%: P(risposta implica il vero) 0,394 (k=1), 0,256 (k=2), 0,244 (k=3).
+
+Lettura, preliminare: il retrieval non dipende da k (le stesse varianti entrano nel top-5) e PCS è stabile. Con più elementi cambiati la risposta implica il vero meno spesso; la risposta controfattuale non cambia, quindi la differenza viene dalla risposta avvelenata. L'adozione NLI non cambia in modo significativo (e A1 mostra che non è specifica). Al 10% ci sono solo 37 record esposti. Misure non calibrate e 66 claim: il confronto principale è `multi2`.
+
+#### `multi2` (Mac Domenico)
+
+Lanciato il 16 novembre alle 16 circa (codice `7034901`, 853 test, impronta delle varianti identica a quella di Susy). Alle 18:19 era all'ultima run di k=1; da verificare (20 cartelle attese) e analizzare.
+
+### Divisione del lavoro (16 novembre)
+
+| Mac | Fatto |
+|---|---|
+| Susy | A2 (entrambe le versioni), `multi3` (30 run), A1 (5 run, spostato qui perché il Mac era libero), A3 `sample` e `score` |
+| Domenico | BM25 Snopes (25 run, 15 novembre), `multi2` (20 run, da verificare) |
 
 ### Sezione 4.12
 
 La sezione 4.12 (replica su claim indipendenti) è nel commit `7d14425` ed è identica alla versione preparata con i risultati della replica. Il Mac di Domenico non la vedeva perché il suo ramo si fermava al commit precedente (`7e5421d`); dopo l'allineamento della sezione 4.13 è presente su entrambi.
+
+## 4.14 Seconda campagna: baseline, famiglie di varianti e altri retriever (piano, 17 novembre 2026)
+
+Preparata il 17 novembre. Nessun risultato ancora. Quattro domande:
+
+1. **Baseline.** I risultati delle varianti a regole sono diversi da quelli senza attacco e da quelli delle varianti del corpus ufficiale sugli stessi claim?
+2. **Regola fissa o casuale.** Cambia qualcosa se l'ampiezza del cambiamento è estratta a caso invece che fissa?
+3. **Tipo di elemento.** Un luogo, un mese, un ordine di grandezza o una direzione cambiati si comportano come un numero cambiato?
+4. **Retriever.** Col denso k non cambia il retrieval; con BM25 (che confronta le parole esatte, numeri compresi) e con l'ibrido?
+
+### Famiglie di varianti
+
+Generatore esteso (`eiger/datasets/multi_element.py`, `scripts/make_multi_element_variants.py --all`). Quattro famiglie, un file ciascuna in `data/multi_element/` (escluso da git, non si pubblica, si rigenera su ogni macchina):
+
+| Famiglia | Cosa cambia | Regola | Claim con ≥1 / ≥2 / ≥3 elementi | SHA-256 (seme 0) |
+|---|---|---|---|---|
+| `num` | numeri e anni | fissa (sezione 4.13) | 861 / 245 / 76 | `7ae52ed3…8c58` (invariata) |
+| `numrand` | gli stessi elementi di `num`, nello stesso ordine | ampiezza casuale: anno ±1..10, intero ±1..5 sotto 10, altrimenti ±5..50%, decimale ±5..50% | 861 / 245 / 76 | `d38dc61f…4ab0` |
+| `mix` | numeri, stati USA, paesi, mesi, ordini di grandezza (thousand/million/billion/trillion), direzione (increased/decreased, rose/fell, higher/lower, more than/less than, ...) | fissa: voce successiva della lista, mese successivo, ordine di grandezza successivo, contrario | 1.124 / 596 / 277 | `da4f17a7…1003` |
+| `mixrand` | gli stessi elementi di `mix` | casuale: un'altra voce qualsiasi della stessa lista; numeri come `numrand`; la direzione ha un solo contrario | 1.124 / 596 / 277 | `8f2a3abe…38a2` |
+
+Impronte complete: `num` `7ae52ed33966fbcf5bfe1bcc228293eccfecbb6b86e43eafc9707ee6cb5b8c58`, `numrand` `d38dc61fe7d7538f4f9002dab0b7a1b10b5f3d1d2265fe9ddda055aa44164ab0`, `mix` `da4f17a706c4bac2013eb29a7c2d7db467101021806cebe592355997a92b1003`, `mixrand` `8f2a3abe303efb335826bf2fa369bcbb4510df5b130aab10dcd8f145f64238a2`.
+
+Disegno appaiato: `numrand` cambia gli stessi elementi di `num` e `mixrand` gli stessi di `mix` (verificato su tutte le righe), quindi fissa contro casuale si confronta sullo stesso claim e sullo stesso elemento. Le famiglie nuove scrivono il tipo di ogni cambio (`Texas -> Utah [us_state]`) e hanno versione 2. Il file `num` è identico a quello usato per `multi2` e `multi3`.
+
+Tipi esclusi, di proposito:
+- **nomi di persona e fonti**: cambiare chi ha detto o fatto qualcosa è lo scambio di attribuzione (M03), escluso dal benchmark dal protocollo etico (README, `allow_non_benchmark_attacks`). Non si introduce senza una decisione esplicita con la collega;
+- parole ambigue: "Washington" (città, cognome), "Jordan", "Chad", "Georgia" come paese, "May" (anche verbo), "up"/"down", "rise"/"fall" (anche nomi);
+- una parola di direzione il cui contrario è già nel claim (cambiarla fonderebbe due elementi).
+
+Restano i limiti della sezione 4.13: nessun modello linguistico, nessuna ricerca della variante più credibile o meno rilevabile, regola uguale per ogni claim.
+
+Filtro delle query: per `num` resta quello concordato (numeri e anni ripetuti). Per le famiglie nuove si escludono anche le query che ripetono una parola cambiata (per esempio il nome dello stato vero), per la stessa ragione: favoriscono il documento vero. Insiemi risultanti: `multi2_numrand` 218 claim (gli stessi di `multi2`), `multi2_mix` e `multi2_mixrand` 394 claim (gli stessi), di cui 300 nello sweep (`max_claims`).
+
+### Baseline
+
+- **Nessun attacco**: una run a 0% per ogni insieme di claim e retriever (`*_noattack_*`). Un seme basta: a 0% il seme non cambia nulla (verificato sullo sweep BM25 Snopes: impronte di retrieval identiche tra i seed a 0%). È la risposta di riferimento con il contesto completo, senza il problema del contesto più corto del controfattuale.
+- **Varianti del corpus ufficiale** sugli stessi claim (`*_corpusvar_*`): ogni claim di `multi2` e `multi3` ha la sua variante nel corpus (M01 202 e M02 16 in `multi2`; M01 63 e M02 3 in `multi3`), che cambia un solo elemento. È il riferimento per k=1. Una sola query di `multi2` ripete il numero cambiato dalla variante del corpus; resta nell'insieme per non rompere l'abbinamento.
+- **Altri retriever**: BM25 e ibrido sui claim di `multi2` (k=1, k=2, varianti del corpus, nessun attacco). Per `multi3` e per le famiglie nuove solo denso, per contenere i tempi.
+
+Per il corpus ufficiale (A1) la baseline senza attacco esiste già: le run a 0% di `results/corpus_sweep_official_genq_preliminary/`.
+
+### Analisi
+
+`scripts/analyze_answers.py` aggiunge:
+- `--noattack DIR`: per ogni record, la risposta della run a 0% sullo stesso claim. Misure: NLI della risposta senza attacco, e 1 − similarità tra risposta e risposta senza attacco. Sui record puliti questa quantità deve essere circa 0 (stesso top-5, generazione a temperatura 0): è un controllo di determinismo.
+- **differenze appaiate dentro lo stesso sweep**, record per record, con intervallo sulla differenza: avvelenata − controfattuale e avvelenata − senza attacco, per P(implica il vero), P(implica la variante) e adozione. Risponde al punto lasciato aperto in A1.
+- `--by-kind`: misure sui record esposti divise per tipo di elemento cambiato (us_state, month, integer, ...; M01/M02 per le varianti del corpus).
+
+Differenze appaiate per A2 e A3: in A2 le due versioni dell'audit sono rilevatori deterministici sugli stessi record e la differenza è già netta (0–1% contro 96–100%), quindi un test appaiato non aggiunge informazione. In A3 il confronto è già appaiato per costruzione (stessi item).
+
+### A3 con una sola annotatrice
+
+Annota la collega. Un annotatore automatico non può sostituire la persona: A3 serve a controllare le misure automatiche, e confrontarle con un'altra misura automatica sarebbe circolare. `scripts/calibration_kit.py` ora ha:
+- `compare` senza `--b`: misure automatiche contro le etichette dell'annotatrice;
+- `retest --n 15`: un secondo foglio con 15 degli stessi item in ordine nuovo, da compilare almeno una settimana dopo senza guardare il primo; `compare --b <retest> --retest` dà l'accordo tra le due compilazioni.
+
+Limite da dichiarare: un'annotatrice con retest misura la coerenza, non se un'altra persona etichetterebbe allo stesso modo.
+
+### Esecuzione
+
+145 configurazioni nuove, tutte con PCS tranne le run senza attacco. Prima di lanciare, su ogni Mac: `python scripts/make_multi_element_variants.py --all` e confronto delle quattro impronte con la tabella sopra.
+
+| Blocco | Cartelle (`experiments/`) | Run | Tempo stimato |
+|---|---|---|---|
+| 1. Nessun attacco, denso | `corpus_sweep_{multi2,multi3,multi2_mix}_noattack_genq_preliminary` | 3 | ~0,5 h |
+| 2. Varianti del corpus, denso | `corpus_sweep_{multi3,multi2}_corpusvar_genq_pcs_preliminary` | 20 | ~3,5 h |
+| 3. Regola casuale, numeri | `corpus_sweep_multi2_numrand_k{1,2}_genq_pcs_preliminary` | 20 | ~5,5 h |
+| 4. Tipi di elemento, fissa | `corpus_sweep_multi2_mix_k{1,2}_genq_pcs_preliminary` | 20 | ~7,5 h |
+| 5. Tipi di elemento, casuale | `corpus_sweep_multi2_mixrand_k{1,2}_genq_pcs_preliminary` | 20 | ~7,5 h |
+| 6. BM25 | `corpus_sweep_multi2_{noattack,corpusvar,k1,k2}_genq_sparse*_preliminary` | 31 | ~8 h |
+| 7. Ibrido | `corpus_sweep_multi2_{noattack,corpusvar,k1,k2}_genq_hybrid*_preliminary` | 31 | ~8 h |
+
+Tempi stimati dalle run del 16 novembre (circa 16 minuti per run su 218 claim con PCS, 5 su 66, circa 22 su 300). Ordine proposto: blocchi 1–5 sul Mac di Susy (circa 24 ore), blocchi 6–7 sul Mac di Domenico (circa 16 ore), dopo la verifica di `multi2`.
+
+Confronti previsti (tutti appaiati per claim):
+
+| Domanda | Confronto |
+|---|---|
+| Baseline | `multi2` k1 contro `corpusvar` e contro `noattack`; lo stesso per `multi3` |
+| Fissa o casuale | `num` k1/k2 (cioè `multi2`) contro `numrand` k1/k2; `mix` contro `mixrand` |
+| Tipo di elemento | `mix` k1 con `--by-kind` |
+| Retriever | `multi2` k1, k2, `corpusvar` con denso, BM25, ibrido |
 
 ## 5. Limiti e interpretazione
 
@@ -385,7 +533,9 @@ Entrambe le versioni confermano il trend crescente, ma i valori sono sovrastimat
 4. **Parità** sull'altra macchina con `10pct_seed42`.
 5. **Revisione umana del corpus ufficiale**, poi sezione 4 con `--reviewed-only`.
 6. Fissare la revisione dei modelli NLI e di embedding (`HF_HUB_OFFLINE=1`).
-7. **Campagne A e B** (sezione 4.13): eseguire PCS, audit di contraddizione, varianti a più elementi; scegliere i due annotatori per la calibrazione; decidere con la collega quale versione dell'audit è il risultato principale.
+7. **Campagne A e B** (sezione 4.13): fatte A1, A2, `multi3`; da verificare e analizzare `multi2`; A3 in attesa dell'annotazione della collega; decidere con la collega quale versione dell'audit è il risultato principale.
+8. **Seconda campagna** (sezione 4.14): baseline, famiglie di varianti, altri retriever. Decidere con la collega se e come introdurre i cambi di nomi (oggi esclusi come M03).
+9. **Parità BM25 Snopes** tra i due Mac: confrontare le impronte di retrieval per run (valori di Susy già calcolati).
 
 ## 8. Riproduzione
 

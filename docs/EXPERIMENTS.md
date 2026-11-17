@@ -385,7 +385,7 @@ Domande per l'annotatore: la risposta afferma il fatto vero? afferma il dettagli
 
 Cosa resta umano: compilare i due fogli. Gli annotatori lavorano separati, senza vedere i punteggi automatici, e non si usa un modello linguistico come secondo annotatore: lo scopo è proprio verificare i giudici automatici contro le persone. Con kappa tra annotatori sotto circa 0.6 va rivisto il codebook prima di giudicare le misure automatiche. Le soglie di FFR (fedeltà > 0.8, correttezza < 0.2) si fissano solo dopo questo confronto.
 
-**Stato (16–17 novembre, Mac Susy).** `sample` e `score` fatti: 50 record (30/10/10, disponibili 142/358/1.000), seme 42, in `results/calibration/a3_batch01_*`. Annota una sola persona, la collega: la procedura per un'annotatrice sola è nella sezione 4.14. Domanda specifica emersa da A1: l'adozione NLI segnala anche risposte senza veleno; il confronto con le etichette deve dire se va scartata o ridefinita.
+**Stato (17 novembre, Mac Susy).** `sample` e `score` fatti: 50 record (30/10/10, disponibili 142/358/1.000), seme 42, in `results/calibration/a3_batch01_*`. Annota una sola persona, la collega: la procedura per un'annotatrice sola è nella sezione 4.14. Domanda specifica emersa da A1: l'adozione NLI segnala anche risposte senza veleno; il confronto con le etichette deve dire se va scartata o ridefinita.
 
 ### Campagna B: varianti a più elementi
 
@@ -430,9 +430,28 @@ Valori assoluti al 50%: P(risposta implica il vero) 0,394 (k=1), 0,256 (k=2), 0,
 
 Lettura, preliminare: il retrieval non dipende da k (le stesse varianti entrano nel top-5) e PCS è stabile. Con più elementi cambiati la risposta implica il vero meno spesso; la risposta controfattuale non cambia, quindi la differenza viene dalla risposta avvelenata. L'adozione NLI non cambia in modo significativo (e A1 mostra che non è specifica). Al 10% ci sono solo 37 record esposti. Misure non calibrate e 66 claim: il confronto principale è `multi2`.
 
-#### `multi2` (Mac Domenico)
+#### `multi2` (16–17 novembre, Mac Domenico, codice `7034901`, 20 run, 218 claim)
 
-Lanciato il 16 novembre alle 16 circa (codice `7034901`, 853 test, impronta delle varianti identica a quella di Susy). Alle 18:19 era all'ultima run di k=1; da verificare (20 cartelle attese) e analizzare.
+Differenze appaiate k=2 − k=1, IC 95% bootstrap per claim:
+
+| Misura | 10% | 50% |
+|---|---|---|
+| Variante nel top-5 | +0,001 [−0,003; 0,006] | 0,000 |
+| Variante sopra il vero (dato esposizione) | −0,028 [−0,121; 0,068] (n=109) | −0,023 [−0,093; 0,049] (n=517) |
+| Variante al primo posto | −0,003 [−0,012; 0,006] | −0,006 [−0,039; 0,027] |
+| PCS, esposizione mirata | 0,000 [−0,007; 0,007] | +0,002 [−0,002; 0,006] |
+| Adozione NLI della risposta | **+0,083 [0,009; 0,159]** | +0,004 [−0,052; 0,061] |
+| P(la risposta implica il vero) | +0,029 [−0,052; 0,113] | 0,000 [−0,055; 0,055] |
+| P(la risposta controfattuale implica il vero) | +0,018 [0,000; 0,046] | +0,008 [−0,006; 0,023] |
+
+Lettura, preliminare:
+1. Il retrieval non dipende da k (stesse varianti nel top-5), e PCS è stabile.
+2. Il calo di "la risposta implica il vero" osservato in `multi3` non si replica: al 50%, con 517 record esposti, la differenza è 0,000. Il risultato di `multi3` (66 claim) è quindi esplorativo e non va citato come conferma.
+3. L'unico segnale significativo è l'adozione NLI al 10%, con intervallo che sfiora lo zero e 109 record. Al 50% sparisce. Va trattato come ipotesi.
+
+Controllo di rumore (Mac Domenico): le risposte controfattuali di k=1 e k=2, che per costruzione hanno lo stesso contesto, sono identiche nel 93,7% dei casi (1.342 su 1.432). Il restante 6% è rumore di generazione a temperatura 0: a parità di input la risposta può cambiare. Di conseguenza le differenze appaiate sono misurate con questo rumore di fondo, e l'adozione al 10% (+0,083) può essere in parte rumore. Per quantificarlo bene serve ripetere una run identica; per le prossime campagne conviene fissare il seed della generazione, se la configurazione di Ollama lo permette.
+
+Stato: risultato di `multi2` acquisito. Confronto con la baseline senza attacco di `multi2` da fare (le run a 0% sono sul Mac di Susy).
 
 ### Divisione del lavoro (16 novembre)
 

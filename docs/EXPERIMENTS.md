@@ -449,7 +449,7 @@ Lettura, preliminare:
 2. Il calo di "la risposta implica il vero" osservato in `multi3` non si replica: al 50%, con 517 record esposti, la differenza è 0,000. Il risultato di `multi3` (66 claim) è quindi esplorativo e non va citato come conferma.
 3. L'unico segnale significativo è l'adozione NLI al 10%, con intervallo che sfiora lo zero e 109 record. Al 50% sparisce. Va trattato come ipotesi.
 
-Controllo di rumore (Mac Domenico): le risposte controfattuali di k=1 e k=2, che per costruzione hanno lo stesso contesto, sono identiche nel 93,7% dei casi (1.342 su 1.432). Il restante 6% è rumore di generazione a temperatura 0: a parità di input la risposta può cambiare. Di conseguenza le differenze appaiate sono misurate con questo rumore di fondo, e l'adozione al 10% (+0,083) può essere in parte rumore. Per quantificarlo bene serve ripetere una run identica; per le prossime campagne conviene fissare il seed della generazione, se la configurazione di Ollama lo permette.
+Controllo di rumore (Mac Domenico, corretto il 19 novembre): le risposte controfattuali di k=1 e k=2 sono identiche nel 93,7% dei casi (1.342 su 1.432). Il 17 novembre il restante 6% era stato attribuito a rumore di generazione, presumendo che il contesto controfattuale fosse identico per costruzione. Era sbagliato: la risposta controfattuale usa il top-5 meno *tutti* i documenti avvelenati, comprese le varianti degli altri claim, e tra k=1 e k=2 il numero di documenti avvelenati nel top-5 può cambiare, e con esso i documenti puliti che restano. Verifica con `scripts/check_counterfactual_context.py` sui due sweep: 1.277 coppie con stesso contesto e stessa risposta, **0 con stesso contesto e risposta diversa**, 65 con contesto diverso e stessa risposta, 90 con contesto diverso e risposta diversa. La generazione è quindi deterministica (lo confermano anche i controlli sui record puliti della seconda campagna, tutti 0,000), e le differenze appaiate non hanno un rumore di fondo da generazione. L'adozione al 10% (+0,083) non si spiega con il rumore; però è l'unico intervallo significativo tra molti confronti e non si ripete né al 50% né nelle altre famiglie (k2 − k1 al 10%: `numrand` +0,028 [−0,038; 0,096], `mix` −0,019 [−0,082; 0,044]). Va trattata come probabile falso positivo da confronti multipli.
 
 Stato: risultato di `multi2` acquisito. Confronto con la baseline senza attacco di `multi2` da fare (le run a 0% sono sul Mac di Susy).
 
@@ -554,6 +554,37 @@ Confronti previsti (tutti appaiati per claim):
 | Tipo di elemento | `mix` k1 con `--by-kind` |
 | Retriever | `multi2` k1, k2, `corpusvar` con denso, BM25, ibrido |
 
+### Risultati dei blocchi 1–5 (19 novembre, preliminari)
+
+Analisi con `scripts/analyze_answers.py --nli` (e `--noattack`, `--by-kind`), file `results/analisi_*.md` sul Mac di Susy. Tutte le misure di risposta sono automatiche (NLI, embedding) e non ancora calibrate con A3.
+
+**1. Effetto del veleno: solido in tutte le famiglie.** Record con la propria variante nel top-5, differenza record per record tra risposta avvelenata e risposta senza attacco:
+
+| Famiglia (tasso) | n | P(la risposta implica il vero) | Adozione NLI |
+|---|---|---|---|
+| A1, corpus ufficiale, tutti i claim (10%) | 142 | −0,195 [−0,275; −0,110] | +0,106 [0,014; 0,196] |
+| `multi2`, varianti del corpus (50%) | 518 | −0,221 [−0,290; −0,155] | +0,158 [0,109; 0,209] |
+| `multi2` `num` k1 (50%) | 517 | −0,255 [−0,326; −0,183] | +0,147 [0,102; 0,197] |
+| `multi2` `numrand` k1 (50%) | 518 | −0,263 [−0,337; −0,192] | +0,114 [0,075; 0,156] |
+| `mix` k1 (50%) | 732 | −0,158 [−0,210; −0,105] | +0,149 [0,107; 0,194] |
+| `mixrand` k1 (50%) | 730 | −0,187 [−0,241; −0,136] | +0,125 [0,084; 0,167] |
+| `multi3` k1 (50%) | 151 | −0,152 [−0,257; −0,042] | +0,185 [0,090; 0,287] |
+| `multi3`, varianti del corpus (50%) | 149 | −0,162 [−0,277; −0,036] | +0,215 [0,121; 0,320] |
+
+Al 10% i valori sono dello stesso ordine. La risposta controfattuale dà quasi gli stessi valori della risposta senza attacco in tutte le famiglie.
+
+Specificità dell'adozione NLI: la risposta senza attacco "adotta" la variante nel 21% dei casi in A1, ma tra 0 e 2% su `multi2`, `multi3` e `mix`. Sui claim con un elemento cambiato (numeri, date, luoghi) la misura è specifica; la scarsa specificità di A1 riguarda le varianti del corpus ufficiale sull'insieme completo dei claim. Da capire con A3.
+
+**2. Regola fissa o casuale: nessuna differenza robusta.** Differenze appaiate al 50%: `numrand` − `num`, adozione −0,035 [−0,086; 0,012], P(vero) −0,009 [−0,053; 0,032], variante sopra il vero +0,019 [−0,063; 0,105] (PCS +0,005 [0,002; 0,009], trascurabile); `mixrand` − `mix` (k1), adozione −0,021 [−0,067; 0,026], P(vero) −0,028 [−0,063; 0,007]. Unico segnale: a k=2 e 10% la variante casuale supera il vero meno spesso (−0,101 [−0,192; −0,012]), ma al 50% la differenza non è significativa (−0,037 [−0,104; 0,032]).
+
+**3. Numero di elementi cambiati: nessun effetto robusto.** k2 − k1 al 50%: `num` adozione +0,004, P(vero) 0,000; `numrand` +0,004, +0,003; `mix` −0,033 [−0,082; 0,014], −0,035 [−0,082; 0,012]. Il retrieval non dipende da k. Il calo di P(vero) in `multi3` (66 claim) resta isolato.
+
+**4. Varianti del corpus ufficiale contro varianti a regole.** Sulla risposta l'effetto è simile. Nel retrieval le varianti ufficiali sembrano piazzarsi più in alto: su `multi3` (appaiato, 50%) variante sopra il vero +0,181 [−0,013; 0,387], variante al primo posto +0,088 [0,000; 0,176], al limite della significatività. Confronto appaiato su `multi2` (`analisi_multi2_baseline.md`): da leggere.
+
+**5. Tipo di elemento: esplorativo.** Pochi record per tipo, intervalli larghi. Al 50% in `mix` k1 l'adozione è più alta per interi (0,19), mesi (0,21) e anni (0,18), più bassa per ordini di grandezza (0,03) e stati USA (0,03).
+
+**6. Determinismo e parità tra i due Mac.** Sui record puliti, 1 − similarità tra risposta e risposta senza attacco è 0,000 [0,000; 0,000] in tutti gli sweep. Lo stesso vale tra le run `multi2` del Mac di Domenico e la baseline senza attacco del Mac di Susy (0,000 su 660 record al 10%): per la pipeline densa i due Mac danno risposte identiche.
+
 ## 5. Limiti e interpretazione
 
 FFR è zero per una ragione strutturale. FFR conta una risposta come falsità fedele solo se la faithfulness supera 0.8 e la correttezza scende sotto 0.2. Lo scorer proxy confronta similarità di embedding, e una risposta sullo stesso argomento del fatto vero ottiene comunque una correttezza alta anche se contiene il falso. Serve uno scorer che verifichi l'implicazione.
@@ -578,11 +609,11 @@ Entrambe le versioni confermano il trend crescente, ma i valori sono sovrastimat
 1. **Definizione di Source Integrity** (da decidere con la collega). Proposta: SI = 1 − media di P(contraddizione | documento, claim). Con questa definizione un documento coerente o non correlato vale circa 1, uno che contraddice il claim circa 0, e la metrica scenderebbe solo se il contesto contiene affermazioni contrarie alla verità.
 2. **Prompt delle query** (da decidere con la collega): metà delle query generate per il corpus ufficiale, e 17 su 100 per Snopes, ripetono il valore vero.
 3. **FFR**: calibrare lo scorer RAGAS su annotazioni umane, e riportare FFR anche sui soli record esposti alla variante del proprio claim.
-4. **Parità** sull'altra macchina con `10pct_seed42`.
+4. **Parità**: per la pipeline densa confermata il 19 novembre (risposte identiche tra i due Mac sui record puliti, sezione 4.14, risultati punto 6). Resta BM25 Snopes (punto 9).
 5. **Revisione umana del corpus ufficiale**, poi sezione 4 con `--reviewed-only`.
 6. Fissare la revisione dei modelli NLI e di embedding (`HF_HUB_OFFLINE=1`).
 7. **Campagne A e B** (sezione 4.13): fatte A1, A2, `multi3`, `multi2`; A3 in attesa dell'annotazione della collega; decidere con la collega quale versione dell'audit è il risultato principale.
-8. **Seconda campagna** (sezione 4.14): blocchi 1–5 completati il 19 novembre, da analizzare; blocchi 6–7 (BM25, ibrido) da lanciare sul Mac di Domenico con `scripts/run_pending.sh`, dopo `scripts/qdrant_drop_collections.sh`. Decidere con la collega se e come introdurre i cambi di nomi (oggi esclusi come M03).
+8. **Seconda campagna** (sezione 4.14): blocchi 1–5 completati e analizzati il 19 novembre (manca la lettura del confronto appaiato `multi2` k1 contro varianti del corpus); blocchi 6–7 (BM25, ibrido) da lanciare sul Mac di Domenico con `scripts/run_pending.sh`, dopo `scripts/qdrant_drop_collections.sh`. Decidere con la collega se e come introdurre i cambi di nomi (oggi esclusi come M03).
 9. **Parità BM25 Snopes** tra i due Mac: confrontare le impronte di retrieval per run (valori di Susy già calcolati).
 
 ## 8. Riproduzione

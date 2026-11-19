@@ -214,3 +214,7 @@ Second campaign (docs/EXPERIMENTS.md, section 4.14):
   collections made Qdrant fail with RocksDB IO errors (17–19 November 2026).
 - `qdrant_drop_collections.sh [PREFIX] [--yes]` — deletes the `eibench_`
   collections between campaigns; refuses while an `eiger run` is active.
+- `check_counterfactual_context.py A B` — for two sweeps on the same claims,
+  counts records whose counterfactual context and answer are the same or
+  differ; "same context, different answer" > 0 would mean non-deterministic
+  generation.

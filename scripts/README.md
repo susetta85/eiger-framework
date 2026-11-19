@@ -208,3 +208,9 @@ Second campaign (docs/EXPERIMENTS.md, section 4.14):
   attack), `--by-kind` (records split by kind of changed element).
 - `calibration_kit.py compare` without `--b` (single annotator), `retest`
   (second pass on a subset) and `compare --retest`.
+- `run_pending.sh FOLDER...` — runs only the configs without `results.json`,
+  deletes each run's Qdrant collection after it succeeds, and on a failure
+  restarts Qdrant and retries once. Use it for long campaigns: accumulated
+  collections made Qdrant fail with RocksDB IO errors (17–19 November 2026).
+- `qdrant_drop_collections.sh [PREFIX] [--yes]` — deletes the `eibench_`
+  collections between campaigns; refuses while an `eiger run` is active.

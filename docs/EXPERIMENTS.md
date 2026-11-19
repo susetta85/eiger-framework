@@ -538,6 +538,13 @@ Limite da dichiarare: un'annotatrice con retest misura la coerenza, non se un'al
 
 Tempi stimati dalle run del 16 novembre (circa 16 minuti per run su 218 claim con PCS, 5 su 66, circa 22 su 300). Ordine proposto: blocchi 1–5 sul Mac di Susy (circa 24 ore), blocchi 6–7 sul Mac di Domenico (circa 16 ore), dopo la verifica di `multi2`.
 
+**Stato (19 novembre).** Blocchi 1–5 completati sul Mac di Susy il 19 novembre alle 12:43 (83 run). Blocchi 6–7 da lanciare sul Mac di Domenico.
+
+**Incidente Qdrant e correzione (17–19 novembre).** Durante i blocchi 2–5 alcune run sono fallite all'inizio, nel reset della collezione, con `RocksDB open error: IO error: While open a file for lock` (poi `While open directory`). Gli errori sono diventati via via più frequenti (nella notte del 19 novembre due run su quattro), e il riavvio del container non bastava più. Causa probabile (non verificata sul log di Qdrant, ma coerente con quanto osservato): ogni run crea la propria collezione e non la cancella; sul Mac di Susy se ne erano accumulate centinaia, che Qdrant tiene aperte e ricarica a ogni avvio, fino a esaurire i file che il container può aprire. Dopo la cancellazione delle collezioni `eibench_` (le analisi leggono solo `results/`, e ogni run ricrea la sua collezione da zero) e con la cancellazione a fine run, le ultime 26 run sono andate senza errori e senza nessun nuovo tentativo. Le run fallite sono state rifatte da capo: i risultati non ne risentono. Strumenti aggiunti:
+- `scripts/run_pending.sh CARTELLA...`: esegue solo le configurazioni senza `results.json`, cancella la collezione dopo ogni run riuscita, e se una run fallisce riavvia Qdrant e la riprova una volta. Da usare per tutte le campagne lunghe, compresi i blocchi 6–7.
+- `scripts/qdrant_drop_collections.sh`: cancella le collezioni `eibench_` tra una campagna e l'altra (rifiuta se c'è una run attiva).
+- `docker-compose.yml`: il controllo di salute usava `curl`, che nell'immagine di Qdrant non c'è, per cui il container risultava sempre "unhealthy". Ora apre la porta con bash; vale dopo `make down && make up`.
+
 Confronti previsti (tutti appaiati per claim):
 
 | Domanda | Confronto |
@@ -574,8 +581,8 @@ Entrambe le versioni confermano il trend crescente, ma i valori sono sovrastimat
 4. **Parità** sull'altra macchina con `10pct_seed42`.
 5. **Revisione umana del corpus ufficiale**, poi sezione 4 con `--reviewed-only`.
 6. Fissare la revisione dei modelli NLI e di embedding (`HF_HUB_OFFLINE=1`).
-7. **Campagne A e B** (sezione 4.13): fatte A1, A2, `multi3`; da verificare e analizzare `multi2`; A3 in attesa dell'annotazione della collega; decidere con la collega quale versione dell'audit è il risultato principale.
-8. **Seconda campagna** (sezione 4.14): baseline, famiglie di varianti, altri retriever. Decidere con la collega se e come introdurre i cambi di nomi (oggi esclusi come M03).
+7. **Campagne A e B** (sezione 4.13): fatte A1, A2, `multi3`, `multi2`; A3 in attesa dell'annotazione della collega; decidere con la collega quale versione dell'audit è il risultato principale.
+8. **Seconda campagna** (sezione 4.14): blocchi 1–5 completati il 19 novembre, da analizzare; blocchi 6–7 (BM25, ibrido) da lanciare sul Mac di Domenico con `scripts/run_pending.sh`, dopo `scripts/qdrant_drop_collections.sh`. Decidere con la collega se e come introdurre i cambi di nomi (oggi esclusi come M03).
 9. **Parità BM25 Snopes** tra i due Mac: confrontare le impronte di retrieval per run (valori di Susy già calcolati).
 
 ## 8. Riproduzione

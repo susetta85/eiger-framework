@@ -602,7 +602,7 @@ Specificità dell'adozione NLI: la risposta senza attacco "adotta" la variante n
 | corpus ufficiale | BM25 | 0,455 | 0,448 | 0,187 |
 | corpus ufficiale | ibrido | 0,483 | 0,570 | 0,262 |
 
-Ibrido − BM25, appaiato: variante nel top-5 +0,024 [0,010; 0,039] (`num` k1) e +0,028 [0,013; 0,044] (corpus ufficiale); variante al primo posto +0,026 [−0,023; 0,075] e +0,075 [0,023; 0,129]. k2 − k1: nessun effetto né con BM25 (variante sopra il vero +0,004 [0,000; 0,012]) né con l'ibrido (−0,021 [−0,088; 0,049]). Il confronto con il denso è per ora solo tra medie (i record densi sono sull'altro Mac): quello appaiato si fa sul Mac di Susy insieme all'analisi NLI.
+Ibrido − BM25, appaiato: variante nel top-5 +0,024 [0,010; 0,039] (`num` k1) e +0,028 [0,013; 0,044] (corpus ufficiale); variante al primo posto +0,026 [−0,023; 0,075] e +0,075 [0,023; 0,129]. k2 − k1: nessun effetto né con BM25 (variante sopra il vero +0,004 [0,000; 0,012]) né con l'ibrido (−0,021 [−0,088; 0,049]). Confronto appaiato con il denso: sotto.
 
 **Punto emerso dalla revisione: con queste query nessun retriever separa il vero dalla variante.** In nessuno dei record con la propria variante nel top-5 la query contiene il valore cambiato (l'insieme `multi2` esclude per costruzione i claim la cui query lo ripete). Conseguenze:
 - BM25: il vero e la variante a regole hanno esattamente lo stesso punteggio nel 100% dei casi `num` k1 (circa 90% con le varianti ufficiali, che a volte cambiano anche altre parole). Chi sta sopra lo decide la regola di spareggio (hash del `doc_id`, introdotta per non favorire sempre il vero). Per BM25 "variante sopra il vero" e "variante al primo posto" valgono circa 0,5 per costruzione e non misurano una proprietà del retriever; per lo stesso motivo k non può cambiare il retrieval BM25.
@@ -613,7 +613,28 @@ Lettura: quando la query non nomina il valore cambiato, vero e variante entrano 
 
 **Nota di disegno sull'ibrido.** La fusione RRF usa solo i primi 5 documenti di ciascun retriever (non liste più lunghe) e risolve i pari merito a favore del denso. Va bene per questa campagna, ma per una versione futura conviene fondere liste più lunghe (per esempio 50) e usare lo stesso spareggio del BM25. Cambierebbe i risultati, quindi solo in una nuova campagna e con un nuovo nome di retriever.
 
-**Da fare per chiudere i blocchi 6–7.** (1) Analisi NLI e PCS per BM25 e ibrido, e confronto appaiato con il denso, sul Mac di Susy (i modelli NLI non sono scaricabili dalla sandbox). (2) Parità tra i Mac per BM25 e ibrido: configurazioni `experiments/parity_bm25` (da eseguire sul Mac di Susy) e `experiments/parity_ibrido` (sul Mac di Domenico), confronto con `scripts/compare_runs.py` contro le run a 0% dell'altro Mac.
+**Effetto sulla risposta con BM25 e ibrido** (analisi del 20 novembre sul Mac di Susy, `results/analisi_bm25.md`, `analisi_ibrido.md`, `analisi_retriever_k1.md`, `analisi_retriever_corpusvar.md`). Record con la propria variante nel top-5, avvelenata − senza attacco (stesso retriever), 50%:
+
+| Retriever | Varianti | n | P(la risposta implica il vero) | Adozione NLI |
+|---|---|---|---|---|
+| denso | `num` k1 | 517 | −0,255 [−0,326; −0,183] | +0,147 [0,102; 0,197] |
+| BM25 | `num` k1 | 496 | −0,227 [−0,292; −0,164] | +0,135 [0,090; 0,184] |
+| ibrido | `num` k1 | 522 | −0,213 [−0,280; −0,145] | +0,119 [0,082; 0,159] |
+| denso | corpus ufficiale | 518 | −0,221 [−0,290; −0,155] | +0,158 [0,109; 0,209] |
+| BM25 | corpus ufficiale | 496 | −0,201 [−0,266; −0,141] | +0,137 [0,088; 0,189] |
+| ibrido | corpus ufficiale | 526 | −0,208 [−0,266; −0,152] | +0,146 [0,094; 0,200] |
+
+Differenze appaiate tra retriever (stessi claim, semi e documenti avvelenati), 50%:
+- `num` k1, BM25 − denso: variante nel top-5 −0,019 [−0,037; −0,002]; adozione −0,012 [−0,071; 0,043]; P(vero) +0,036 [−0,006; 0,080]. Ibrido − denso: top-5 +0,005 [−0,005; 0,015]; adozione −0,025 [−0,060; 0,008]; P(vero) +0,029 [−0,005; 0,062].
+- Corpus ufficiale, BM25 − denso: top-5 −0,020 [−0,038; −0,002]; variante al primo posto −0,075 [−0,130; −0,022]; adozione −0,019 [−0,079; 0,036]; P(vero) +0,032 [−0,009; 0,078]. Ibrido − denso: top-5 +0,007 [0,001; 0,017]; nessuna differenza sulla risposta.
+- Al 10% l'unica differenza significativa è ibrido − denso su P(vero) con `num` k1 (+0,062 [0,009; 0,116], 109 record), che non si ripete al 50%.
+- k2 − k1 e corpus ufficiale − `num` k1, dentro BM25 e dentro l'ibrido: nessuna differenza significativa sulla risposta.
+
+Lettura, preliminare: il retriever cambia di poco quanto spesso la variante entra nel contesto (BM25 circa 2 punti in meno del denso) e dove la mette (con BM25 le varianti ufficiali finiscono meno spesso al primo posto), ma non cambia l'effetto sulla risposta una volta che la variante è nel contesto. La risposta alla domanda 4 è quindi: il risultato principale non dipende dal retriever. Nell'ibrido l'ordine tra vero e variante coincide con quello del denso (differenza 0,000), coerente con la nota di disegno sopra.
+
+**Parità tra i Mac: completa.** Run a 0% ripetute sull'altro Mac e confrontate con `scripts/compare_runs.py`: BM25 (Mac di Susy contro Mac di Domenico) 218 su 218 con lo stesso retrieval e la stessa risposta; ibrido (Mac di Domenico contro Mac di Susy) 218 su 218. Con il denso (sezione 4.14, risultati punto 6), i due Mac danno risultati identici con tutti e tre i retriever.
+
+**Effetto dell'avvelenamento sul retrieval di claim non toccati (BM25 e ibrido).** Con il denso, sui record puliti la risposta coincide con quella senza attacco (0,000). Con BM25 no (0,007), e non è rumore: i punteggi BM25 dipendono dalle statistiche dell'intero corpus (frequenza delle parole nei documenti, lunghezza media), e aggiungere i documenti avvelenati le cambia. Sui record puliti di `num` k1, 237 su 807 hanno con BM25 un top-5 diverso da quello della run senza attacco; con l'ibrido 107 su 815; con il denso nessuno. In tutti i casi con lo stesso top-5 anche la risposta è uguale, quindi la generazione resta deterministica. Conseguenze: (1) con i retriever lessicali l'avvelenamento di una parte del corpus sposta il retrieval anche per domande non toccate, un effetto collaterale da riportare; (2) con BM25 e ibrido la run senza attacco è un riferimento un po' meno pulito che col denso, e per questo con BM25 avvelenata − controfattuale (−0,156) e avvelenata − senza attacco (−0,227) differiscono più che col denso.
 
 ## 5. Limiti e interpretazione
 
@@ -638,7 +659,7 @@ Entrambe le versioni confermano il trend crescente, ma i valori sono sovrastimat
 
 In ordine di priorità; la roadmap completa con gli esperimenti proposti è nel documento di progetto `EIGER_roadmap_novembre_2026`.
 
-1. **Chiudere la seconda campagna** (sezione 4.14): analisi NLI e PCS per BM25 e ibrido, confronto appaiato con il denso, parità BM25 e ibrido tra i Mac (`parity_bm25`, `parity_ibrido`, `scripts/compare_runs.py`).
+1. **Seconda campagna: chiusa il 20 novembre** (sezione 4.14). Tutti i blocchi completati e analizzati; parità tra i Mac verificata per denso, BM25 e ibrido.
 2. **A3, calibrazione umana** (sezione 4.13): annotazione della collega, poi `compare` e `retest`. È il prerequisito per qualunque affermazione sull'adozione NLI: in A1 la misura "adotta" la variante nel 21% delle risposte senza veleno.
 3. **Decisioni con la collega**: definizione di Source Integrity (proposta: SI = 1 − media di P(contraddizione | documento, claim)); prompt delle query (metà delle query generate per il corpus ufficiale, e 17 su 100 per Snopes, ripetono il valore vero; l'insieme `multi2` le esclude per costruzione); versione principale dell'audit A2; se e come introdurre i cambi di nomi (oggi esclusi come M03).
 4. **Piano statistico** prima della prossima campagna: un endpoint primario dichiarato in anticipo (proposta: P(la risposta implica il vero), avvelenata − senza attacco, record con la propria variante nel top-5, 50%), tutto il resto esplorativo; correzione per confronti multipli o, in alternativa, replica obbligatoria su un secondo insieme di claim prima di citare un effetto.

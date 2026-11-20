@@ -218,3 +218,7 @@ Second campaign (docs/EXPERIMENTS.md, section 4.14):
   counts records whose counterfactual context and answer are the same or
   differ; "same context, different answer" > 0 would mean non-deterministic
   generation.
+- `compare_runs.py RUN_A RUN_B` — parity check between two runs of the same
+  configuration (for example on two machines): same retrieved doc ids, same
+  answer, same counterfactual answer. Configs for the BM25 and hybrid parity
+  checks: `experiments/parity_bm25`, `experiments/parity_ibrido`.

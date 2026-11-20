@@ -585,6 +585,36 @@ Specificità dell'adozione NLI: la risposta senza attacco "adotta" la variante n
 
 **6. Determinismo e parità tra i due Mac.** Sui record puliti, 1 − similarità tra risposta e risposta senza attacco è 0,000 [0,000; 0,000] in tutti gli sweep. Lo stesso vale tra le run `multi2` del Mac di Domenico e la baseline senza attacco del Mac di Susy (0,000 su 660 record al 10%): per la pipeline densa i due Mac danno risposte identiche.
 
+### Blocchi 6–7 (BM25 e ibrido) e revisione del 20 novembre
+
+**Stato.** 62 run complete: BM25 sul Mac di Domenico (codice `0f2defb`), ibrido sul Mac di Susy (codice `75b53b0`; tra i due commit cambia solo la documentazione).
+
+**Controlli di integrità** (tutte le 62 run): 218 claim per run, sempre lo stesso insieme; top-5 sempre pieno; nessuna risposta vuota; risposta controfattuale presente esattamente quando c'è veleno nel top-5; nessun documento avvelenato nelle run a 0%. Le configurazioni BM25 e ibride differiscono da quelle dense solo per il tipo di retriever (e per nome, collezione e cartella). L'insieme avvelenato dipende solo da seme, tasso e claim (`CorpusBuilder`, `derive_seed`), non dal retriever né da k: il confronto appaiato tra retriever è valido.
+
+**Retrieval, `multi2`, 50%** (1.090 record per sweep):
+
+| Varianti | Retriever | Variante nel top-5 | Variante sopra il vero | Variante al primo posto |
+|---|---|---|---|---|
+| `num` k1 | denso | 0,474 | 0,489 | 0,220 |
+| `num` k1 | BM25 | 0,455 | 0,478 | 0,200 |
+| `num` k1 | ibrido | 0,479 | 0,494 | 0,226 |
+| corpus ufficiale | denso | 0,475 | 0,566 | 0,262 |
+| corpus ufficiale | BM25 | 0,455 | 0,448 | 0,187 |
+| corpus ufficiale | ibrido | 0,483 | 0,570 | 0,262 |
+
+Ibrido − BM25, appaiato: variante nel top-5 +0,024 [0,010; 0,039] (`num` k1) e +0,028 [0,013; 0,044] (corpus ufficiale); variante al primo posto +0,026 [−0,023; 0,075] e +0,075 [0,023; 0,129]. k2 − k1: nessun effetto né con BM25 (variante sopra il vero +0,004 [0,000; 0,012]) né con l'ibrido (−0,021 [−0,088; 0,049]). Il confronto con il denso è per ora solo tra medie (i record densi sono sull'altro Mac): quello appaiato si fa sul Mac di Susy insieme all'analisi NLI.
+
+**Punto emerso dalla revisione: con queste query nessun retriever separa il vero dalla variante.** In nessuno dei record con la propria variante nel top-5 la query contiene il valore cambiato (l'insieme `multi2` esclude per costruzione i claim la cui query lo ripete). Conseguenze:
+- BM25: il vero e la variante a regole hanno esattamente lo stesso punteggio nel 100% dei casi `num` k1 (circa 90% con le varianti ufficiali, che a volte cambiano anche altre parole). Chi sta sopra lo decide la regola di spareggio (hash del `doc_id`, introdotta per non favorire sempre il vero). Per BM25 "variante sopra il vero" e "variante al primo posto" valgono circa 0,5 per costruzione e non misurano una proprietà del retriever; per lo stesso motivo k non può cambiare il retrieval BM25.
+- Ibrido: pari merito nel 45–50% dei casi, risolti a favore del documento che compare prima nella lista densa.
+- Denso: nessun pari merito esatto, ma "variante sopra il vero" resta vicino a 0,5 (0,489).
+
+Lettura: quando la query non nomina il valore cambiato, vero e variante entrano insieme nel top-5 e il conflitto passa al generatore. Le misure informative sono l'esposizione (variante nel top-5) e gli effetti sulla risposta; "variante sopra il vero" e PRD@1 vanno riportati con questa avvertenza, e per BM25 non vanno interpretati.
+
+**Nota di disegno sull'ibrido.** La fusione RRF usa solo i primi 5 documenti di ciascun retriever (non liste più lunghe) e risolve i pari merito a favore del denso. Va bene per questa campagna, ma per una versione futura conviene fondere liste più lunghe (per esempio 50) e usare lo stesso spareggio del BM25. Cambierebbe i risultati, quindi solo in una nuova campagna e con un nuovo nome di retriever.
+
+**Da fare per chiudere i blocchi 6–7.** (1) Analisi NLI e PCS per BM25 e ibrido, e confronto appaiato con il denso, sul Mac di Susy (i modelli NLI non sono scaricabili dalla sandbox). (2) Parità tra i Mac per BM25 e ibrido: configurazioni `experiments/parity_bm25` (da eseguire sul Mac di Susy) e `experiments/parity_ibrido` (sul Mac di Domenico), confronto con `scripts/compare_runs.py` contro le run a 0% dell'altro Mac.
+
 ## 5. Limiti e interpretazione
 
 FFR è zero per una ragione strutturale. FFR conta una risposta come falsità fedele solo se la faithfulness supera 0.8 e la correttezza scende sotto 0.2. Lo scorer proxy confronta similarità di embedding, e una risposta sullo stesso argomento del fatto vero ottiene comunque una correttezza alta anche se contiene il falso. Serve uno scorer che verifichi l'implicazione.
@@ -606,15 +636,16 @@ Entrambe le versioni confermano il trend crescente, ma i valori sono sovrastimat
 
 ## 7. Cosa serve ancora
 
-1. **Definizione di Source Integrity** (da decidere con la collega). Proposta: SI = 1 − media di P(contraddizione | documento, claim). Con questa definizione un documento coerente o non correlato vale circa 1, uno che contraddice il claim circa 0, e la metrica scenderebbe solo se il contesto contiene affermazioni contrarie alla verità.
-2. **Prompt delle query** (da decidere con la collega): metà delle query generate per il corpus ufficiale, e 17 su 100 per Snopes, ripetono il valore vero.
-3. **FFR**: calibrare lo scorer RAGAS su annotazioni umane, e riportare FFR anche sui soli record esposti alla variante del proprio claim.
-4. **Parità**: per la pipeline densa confermata il 19 novembre (risposte identiche tra i due Mac sui record puliti, sezione 4.14, risultati punto 6). Resta BM25 Snopes (punto 9).
-5. **Revisione umana del corpus ufficiale**, poi sezione 4 con `--reviewed-only`.
-6. Fissare la revisione dei modelli NLI e di embedding (`HF_HUB_OFFLINE=1`).
-7. **Campagne A e B** (sezione 4.13): fatte A1, A2, `multi3`, `multi2`; A3 in attesa dell'annotazione della collega; decidere con la collega quale versione dell'audit è il risultato principale.
-8. **Seconda campagna** (sezione 4.14): blocchi 1–5 completati e analizzati il 19 novembre; blocchi 6–7 in corso (ibrido sul Mac di Susy, BM25 sul Mac di Domenico, con `scripts/run_pending.sh`). Per il confronto tra retriever servirà il controllo sui record puliti tra i due Mac, come per il denso. Decidere con la collega se e come introdurre i cambi di nomi (oggi esclusi come M03).
-9. **Parità BM25 Snopes** tra i due Mac: confrontare le impronte di retrieval per run (valori di Susy già calcolati).
+In ordine di priorità; la roadmap completa con gli esperimenti proposti è nel documento di progetto `EIGER_roadmap_novembre_2026`.
+
+1. **Chiudere la seconda campagna** (sezione 4.14): analisi NLI e PCS per BM25 e ibrido, confronto appaiato con il denso, parità BM25 e ibrido tra i Mac (`parity_bm25`, `parity_ibrido`, `scripts/compare_runs.py`).
+2. **A3, calibrazione umana** (sezione 4.13): annotazione della collega, poi `compare` e `retest`. È il prerequisito per qualunque affermazione sull'adozione NLI: in A1 la misura "adotta" la variante nel 21% delle risposte senza veleno.
+3. **Decisioni con la collega**: definizione di Source Integrity (proposta: SI = 1 − media di P(contraddizione | documento, claim)); prompt delle query (metà delle query generate per il corpus ufficiale, e 17 su 100 per Snopes, ripetono il valore vero; l'insieme `multi2` le esclude per costruzione); versione principale dell'audit A2; se e come introdurre i cambi di nomi (oggi esclusi come M03).
+4. **Piano statistico** prima della prossima campagna: un endpoint primario dichiarato in anticipo (proposta: P(la risposta implica il vero), avvelenata − senza attacco, record con la propria variante nel top-5, 50%), tutto il resto esplorativo; correzione per confronti multipli o, in alternativa, replica obbligatoria su un secondo insieme di claim prima di citare un effetto.
+5. **Riproducibilità**: registrare in `results.json` anche la versione di Ollama e l'impronta del modello, e le versioni di numpy e rank-bm25 (oggi solo Python e piattaforma); fissare la revisione dei modelli NLI e di embedding (`HF_HUB_OFFLINE=1`).
+6. **FFR**: calibrare lo scorer RAGAS su annotazioni umane, e riportare FFR anche sui soli record esposti alla variante del proprio claim.
+7. **Revisione umana del corpus ufficiale**, poi sezione 4 con `--reviewed-only`.
+8. **Parità BM25 Snopes** tra i due Mac: ora si può fare con `scripts/compare_runs.py` sulle due run `10pct_seed42`.
 
 ## 8. Riproduzione
 

@@ -254,6 +254,44 @@ def test_sweep_baseline_cli(monkeypatch, capsys) -> None:
         assert expected in capsys.readouterr().out
 
 
+def test_sweep_generator_and_top_k(monkeypatch, capsys) -> None:
+    sweep = _load("make_corpus_sweep")
+    assert sweep.model_tag("qwen2.5:7b") == "qwen2-5-7b"
+    # Defaults keep the existing folder names.
+    assert sweep.sweep_name("multi2", "genq", False, "dense", True, 1) == (
+        "corpus_sweep_multi2_k1_genq_pcs_preliminary"
+    )
+    assert sweep.sweep_name(
+        "multi2", "genq", False, "dense", True, 1, llm_model="mistral:7b", top_k=10
+    ) == "corpus_sweep_multi2_k1_genq_mistral-7b_top10_pcs_preliminary"
+    cfg = sweep.build_config(
+        50, 42, 300, False, "multi2", "genq", "dense", True, 1, llm_model="gemma2:9b", top_k=3
+    )
+    assert cfg["llm"]["model"] == "gemma2:9b"
+    assert cfg["retriever"]["top_k"] == 3
+    assert "generator gemma2:9b" in cfg["description"] and "top-3" in cfg["description"]
+    assert "_gemma2-9b_top3_" in cfg["output_dir"]
+    default = sweep.build_config(50, 42, 300, False, "multi2", "genq", "dense", True, 1)
+    assert default["llm"]["model"] == "llama3.1:8b" and default["retriever"]["top_k"] == 5
+    assert "generator" not in default["description"]
+    monkeypatch.setattr(sys, "argv", ["x", "--corpus", "multi2", "--k", "1", "--top-k", "0", "--dry-run"])
+    with pytest.raises(SystemExit):
+        sweep.main()
+
+
+def test_sweep_generator_header(monkeypatch, tmp_path) -> None:
+    sweep = _load("make_corpus_sweep")
+    monkeypatch.setattr(sweep, "REPO", tmp_path)
+    argv = ["x", "--corpus", "multi2", "--queries", "genq", "--k", "1", "--rates", "50",
+            "--seeds", "42", "--llm-model", "qwen2.5:7b", "--top-k", "10"]
+    monkeypatch.setattr(sys, "argv", argv)
+    assert sweep.main() == 0
+    [path] = list(tmp_path.glob("experiments/*/50pct_seed42.yaml"))
+    text = path.read_text()
+    assert "generator qwen2.5:7b; top-10." in text
+    assert "corpus_sweep_multi2_k1_genq_qwen2-5-7b_top10_preliminary" in str(path)
+
+
 # ─── scripts/analyze_answers.py: within-sweep, no attack, by kind ────────────
 
 

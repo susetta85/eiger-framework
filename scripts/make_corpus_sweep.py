@@ -99,12 +99,19 @@ FAMILY = {"multi2": "num", "multi3": "num", "multi2_numrand": "numrand",
 
 
 RETRIEVERS = ("dense", "sparse", "hybrid")
+DEFAULT_MODEL = "llama3.1:8b"
+DEFAULT_TOP_K = 5
+
+
+def model_tag(model: str) -> str:
+    """Folder-safe model name: "qwen2.5:7b" -> "qwen2-5-7b"."""
+    return "".join(c if c.isalnum() else "-" for c in model.lower()).strip("-")
 
 
 def sweep_name(
     corpus: str, queries: str, reviewed_only: bool, retriever: str = "dense",
     pcs: bool = False, k: int | None = None, corpus_variants: bool = False,
-    no_attack: bool = False,
+    no_attack: bool = False, llm_model: str = DEFAULT_MODEL, top_k: int = DEFAULT_TOP_K,
 ) -> str:
     kind = "reviewed" if reviewed_only else "preliminary"
     # Dense sweeps keep their original folder names, so existing results stay valid.
@@ -120,6 +127,12 @@ def sweep_name(
         base = f"corpus_sweep_{corpus_tag}_{queries}"
     else:
         base = f"corpus_sweep_{corpus_tag}_{queries}_{retriever}"
+    # Non-default generator or context size get their own folders; the
+    # defaults keep the existing names, so existing results stay valid.
+    if llm_model != DEFAULT_MODEL:
+        base += f"_{model_tag(llm_model)}"
+    if top_k != DEFAULT_TOP_K:
+        base += f"_top{top_k}"
     return f"{base}_pcs_{kind}" if pcs else f"{base}_{kind}"
 
 
@@ -127,10 +140,12 @@ def build_config(
     rate_pct: int, seed: int, max_claims: int, reviewed_only: bool,
     corpus: str = "official", queries: str = "template", retriever: str = "dense",
     pcs: bool = False, k: int | None = None, corpus_variants: bool = False,
-    no_attack: bool = False,
+    no_attack: bool = False, llm_model: str = DEFAULT_MODEL, top_k: int = DEFAULT_TOP_K,
 ) -> dict:
     kind = "reviewed" if reviewed_only else "preliminary"
-    name = sweep_name(corpus, queries, reviewed_only, retriever, pcs, k, corpus_variants, no_attack)
+    name = sweep_name(
+        corpus, queries, reviewed_only, retriever, pcs, k, corpus_variants, no_attack, llm_model, top_k
+    )
     tag = f"{rate_pct}pct_seed{seed}"
     params: dict = {"variant_source": "official" if corpus_variants else VARIANT_SOURCE[corpus]}
     if k is not None and not corpus_variants:
@@ -152,7 +167,10 @@ def build_config(
     return {
         "experiment_id": f"{name}_{tag}",
         "description": (
-            f"{corpus} corpus sweep ({kind}, {queries} queries, {retriever} retrieval), rate={rate_pct}%, seed={seed}, "
+            f"{corpus} corpus sweep ({kind}, {queries} queries, {retriever} retrieval"
+            + (f", generator {llm_model}" if llm_model != DEFAULT_MODEL else "")
+            + (f", top-{top_k}" if top_k != DEFAULT_TOP_K else "")
+            + f"), rate={rate_pct}%, seed={seed}, "
             f"{manipulations}." + (" PCS counterfactual generation on." if pcs else "")
             + ("" if reviewed_only else " PRELIMINARY: corpus not yet human-validated.")
         ),
@@ -169,10 +187,10 @@ def build_config(
             "type": retriever,
             "embedder": "sentence-transformers/all-MiniLM-L6-v2",
             "vector_store": "qdrant",
-            "top_k": 5,
+            "top_k": top_k,
             "collection_name": f"eibench_{name}_{tag}",
         },
-        "llm": {"backend": "ollama", "model": "llama3.1:8b", "temperature": 0.0, "max_tokens": 512},
+        "llm": {"backend": "ollama", "model": llm_model, "temperature": 0.0, "max_tokens": 512},
         "faithfulness_scorer": "embedding",
         "metrics": ["ffr", "source_integrity", "ers", "prr", "prd"] + (["pcs"] if pcs else []),
         "output_dir": f"results/{name}/{tag}/",
@@ -200,8 +218,14 @@ def main() -> int:
     parser.add_argument("--queries", choices=["template", "genq", "genq_all"], default="template",
                         help="template 'Is it true that ...?'; genq = neutral generated queries (v2, "
                              "numeric-leak rows excluded); genq_all = same, leak rows kept (sensitivity)")
+    parser.add_argument("--llm-model", default=DEFAULT_MODEL,
+                        help=f"Ollama model (default {DEFAULT_MODEL}); others get their own folder")
+    parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K,
+                        help=f"documents in the context (default {DEFAULT_TOP_K}); others get their own folder")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    if args.top_k < 1:
+        parser.error("--top-k must be at least 1")
 
     if args.corpus != "official" and args.reviewed_only:
         parser.error("only the official corpus has human-reviewed rows")
@@ -223,12 +247,13 @@ def main() -> int:
     no_attack = no_attack and args.corpus in MAX_K
     out_dir = REPO / "experiments" / sweep_name(
         args.corpus, args.queries, args.reviewed_only, args.retriever, args.pcs, args.k,
-        args.corpus_variants, no_attack,
+        args.corpus_variants, no_attack, args.llm_model, args.top_k,
     )
     planned = [
         (out_dir / f"{rate}pct_seed{seed}.yaml",
          build_config(rate, seed, args.max_claims, args.reviewed_only, args.corpus, args.queries,
-                      args.retriever, args.pcs, args.k, args.corpus_variants, no_attack))
+                      args.retriever, args.pcs, args.k, args.corpus_variants, no_attack,
+                      args.llm_model, args.top_k))
         for rate in args.rates
         for seed in args.seeds
     ]
@@ -246,7 +271,9 @@ def main() -> int:
         + (f"; k={args.k}" if args.k is not None else "")
         + ("; official corpus variants (baseline)" if args.corpus_variants else "")
         + ("; no attack (baseline)" if no_attack else "")
-        + ("; PCS on" if args.pcs else "") + ".\n"
+        + ("; PCS on" if args.pcs else "")
+        + (f"; generator {args.llm_model}" if args.llm_model != DEFAULT_MODEL else "")
+        + (f"; top-{args.top_k}" if args.top_k != DEFAULT_TOP_K else "") + ".\n"
         + ("" if args.reviewed_only else "# PRELIMINARY: corpus not yet human-validated.\n")
     )
     for path, cfg in planned:

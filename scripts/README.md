@@ -212,6 +212,23 @@ Second campaign (docs/EXPERIMENTS.md, section 4.14):
   deletes each run's Qdrant collection after it succeeds, and on a failure
   restarts Qdrant and retries once. Use it for long campaigns: accumulated
   collections made Qdrant fail with RocksDB IO errors (17–19 November 2026).
+- `make_corpus_sweep.py --llm-model MODEL --top-k K` — generator and context
+  size for the third campaign (section 4.15); non-default values get their own
+  folder suffix (`_qwen2-5-7b`, `_top10`), defaults keep the existing names.
+  The 64 configs of the third campaign come from:
+
+      G="python scripts/make_corpus_sweep.py --corpus multi2 --queries genq"
+      for m in qwen2.5:7b mistral:7b; do
+        $G --rates 0 --seeds 42 --llm-model $m
+        $G --k 1 --pcs --rates 50 --llm-model $m
+        $G --corpus-variants --pcs --rates 50 --llm-model $m
+      done
+      for t in 3 10; do
+        $G --rates 0 --seeds 42 --top-k $t
+        $G --k 1 --pcs --rates 50 --top-k $t
+      done
+      $G --k 1 --pcs --rates 1 5 25
+      $G --k 1 --pcs --rates 1 5 25 --retriever sparse
 - `qdrant_drop_collections.sh [PREFIX] [--yes]` — deletes the `eibench_`
   collections between campaigns; refuses while an `eiger run` is active.
 - `check_counterfactual_context.py A B` — for two sweeps on the same claims,

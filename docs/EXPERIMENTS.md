@@ -636,6 +636,25 @@ Lettura, preliminare: il retriever cambia di poco quanto spesso la variante entr
 
 **Effetto dell'avvelenamento sul retrieval di claim non toccati (BM25 e ibrido).** Con il denso, sui record puliti la risposta coincide con quella senza attacco (0,000). Con BM25 no (0,007), e non è rumore: i punteggi BM25 dipendono dalle statistiche dell'intero corpus (frequenza delle parole nei documenti, lunghezza media), e aggiungere i documenti avvelenati le cambia. Sui record puliti di `num` k1, 237 su 807 hanno con BM25 un top-5 diverso da quello della run senza attacco; con l'ibrido 107 su 815; con il denso nessuno. In tutti i casi con lo stesso top-5 anche la risposta è uguale, quindi la generazione resta deterministica. Conseguenze: (1) con i retriever lessicali l'avvelenamento di una parte del corpus sposta il retrieval anche per domande non toccate, un effetto collaterale da riportare; (2) con BM25 e ibrido la run senza attacco è un riferimento un po' meno pulito che col denso, e per questo con BM25 avvelenata − controfattuale (−0,156) e avvelenata − senza attacco (−0,227) differiscono più che col denso.
 
+## 4.15 Terza campagna: generatori, profondità del contesto, dose–risposta (piano, 20 novembre 2026)
+
+Nessuno di questi esperimenti dipende da A3 o dalle decisioni aperte con la collega (Source Integrity, prompt delle query, M03): usano solo la misura primaria, che non è l'adozione NLI.
+
+**Piano statistico, dichiarato prima delle run.**
+- Misura primaria: P(la risposta implica il vero), avvelenata − senza attacco, record con la propria variante nel top-5, differenza record per record con IC 95% bootstrap per claim (`scripts/analyze_answers.py --nli --noattack`).
+- Tutto il resto (adozione NLI, PCS, retrieval, tipo di elemento) è esplorativo e non si cita come risultato senza replica.
+- Ipotesi: H1 (E1) il calo di P(vero) è presente con tutti i generatori, cioè l'intervallo esclude lo zero per ciascuno; le differenze tra generatori sono esplorative. H2 (E4) con top-10 il calo è minore che con top-5, con top-3 maggiore. H3 (E5) il calo per record esposto non dipende dal tasso; cresce invece la quota di record esposti, e con BM25 la quota di claim non toccati il cui top-5 cambia.
+
+**Insieme di claim e confronti.** Sempre `multi2` (218 claim), varianti `num` k1 e varianti del corpus ufficiale, query `genq`, 5 semi. Stessi claim, semi e documenti avvelenati in tutte le run: i confronti tra generatori, tra top-k e tra tassi sono appaiati.
+
+| Esperimento | Cosa cambia | Cartelle | Run |
+|---|---|---|---|
+| E1, altri generatori | `qwen2.5:7b` e `mistral:7b` al posto di `llama3.1:8b` (denso, 50%) | `corpus_sweep_multi2_{noattack,k1,corpusvar}_genq_{qwen2-5-7b,mistral-7b}_…` | 22 |
+| E4, profondità del contesto | top-3 e top-10 al posto di top-5 (denso, `num` k1, 50%) | `corpus_sweep_multi2_{noattack,k1}_genq_{top3,top10}_…` | 12 |
+| E5, dose–risposta | tassi 1, 5 e 25% (10 e 50 ci sono già), denso e BM25 | nelle cartelle esistenti `corpus_sweep_multi2_k1_genq_pcs_preliminary` e `…_sparse_pcs_preliminary` | 30 |
+
+Configurazioni generate con le nuove opzioni `--llm-model` e `--top-k` di `scripts/make_corpus_sweep.py`; con i valori predefiniti i nomi delle cartelle restano quelli di prima (verificato: nessuna configurazione esistente cambia). Per E1 i modelli vanno scaricati prima (`ollama pull qwen2.5:7b`, `ollama pull mistral:7b`). Tutte le run nuove registrano versione di Ollama e impronta del modello (`environment` in `results.json`).
+
 ## 5. Limiti e interpretazione
 
 FFR è zero per una ragione strutturale. FFR conta una risposta come falsità fedele solo se la faithfulness supera 0.8 e la correttezza scende sotto 0.2. Lo scorer proxy confronta similarità di embedding, e una risposta sullo stesso argomento del fatto vero ottiene comunque una correttezza alta anche se contiene il falso. Serve uno scorer che verifichi l'implicazione.

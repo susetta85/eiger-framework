@@ -137,9 +137,11 @@ What this module does NOT do:
 
 from __future__ import annotations
 
+import os
 import platform
 import subprocess
 from collections.abc import Callable
+from importlib import metadata
 from pathlib import Path
 
 from eiger.attacks import get_attack
@@ -160,6 +162,19 @@ from eiger.utils.logging import get_logger
 from eiger.utils.seeding import seed_everything
 
 log = get_logger(__name__)
+
+# Packages whose version can change results without any change in EIGER's
+# code or config: retrieval (numpy, rank-bm25, qdrant-client), embeddings and
+# NLI (sentence-transformers, transformers, torch), HTTP to Ollama (httpx).
+_TRACKED_PACKAGES = (
+    "numpy",
+    "rank-bm25",
+    "qdrant-client",
+    "sentence-transformers",
+    "transformers",
+    "torch",
+    "httpx",
+)
 
 # Repository root, resolved relative to this file (eiger/experiments/runner.py
 # -> eiger/ -> repo root), so `git rev-parse HEAD` works regardless of the
@@ -322,7 +337,7 @@ class ExperimentRunner:
             config=self.config,
             records=records,
             aggregate_metrics=aggregate_metrics,
-            environment=self._capture_environment(),
+            environment={**self._capture_environment(), **self._capture_llm_backend()},
         )
 
         if save:
@@ -616,11 +631,38 @@ class ExperimentRunner:
         Capture basic environment metadata for cross-machine debugging.
 
         Returns:
-            Dict with "python_version" and "platform" keys, so results
-            produced on different machines can be compared for
-            environment-induced discrepancies.
+            Dict with "python_version", "platform", "hf_hub_offline" and one
+            "pkg_<name>" key per package in _TRACKED_PACKAGES (its installed
+            version, or "not installed"), so results produced on different
+            machines can be compared for environment-induced discrepancies.
         """
-        return {
+        env = {
             "python_version": platform.python_version(),
             "platform": platform.platform(),
+            # Unset means the HF libraries may download a newer model revision.
+            "hf_hub_offline": os.environ.get("HF_HUB_OFFLINE", "unset"),
         }
+        for package in _TRACKED_PACKAGES:
+            try:
+                env[f"pkg_{package}"] = metadata.version(package)
+            except metadata.PackageNotFoundError:
+                env[f"pkg_{package}"] = "not installed"
+        return env
+
+    def _capture_llm_backend(self) -> dict[str, str]:
+        """
+        Ask the LLM backend for its version and model build (BaseLLM.backend_info).
+
+        Only a dict is accepted, and keys and values are stored as strings, so
+        an unexpected return value (for example from a test double) cannot
+        break result serialisation. Exceptions are not expected (backends must
+        report problems as values) but are caught as well, so a reproducibility
+        detail can never cost the results of a finished experiment.
+        """
+        try:
+            info = self.llm.backend_info()
+        except Exception:  # noqa: BLE001 — see docstring
+            return {"llm_backend": "unavailable"}
+        if not isinstance(info, dict):
+            return {}
+        return {str(k): str(v) for k, v in info.items()}

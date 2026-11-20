@@ -404,6 +404,24 @@ class BaseLLM(ABC):
         """
 
 
+    def backend_info(self) -> dict[str, str]:
+        """
+        Describe the serving backend for reproducibility (recorded in results).
+
+        Backends override this to report what can change generation without
+        any change in the code or the config: server version, exact model
+        build (digest), and so on. The default reports nothing.
+
+        Implementations must not raise: an unreachable server is reported as
+        a value (for example "unavailable"), never as an exception, because
+        this runs after the experiment and must not lose its results.
+
+        Returns:
+            Flat dict of string keys and string values.
+        """
+        return {}
+
+
 # ─── Metric interface ─────────────────────────────────────────────────────────
 
 class BaseMetric(ABC):

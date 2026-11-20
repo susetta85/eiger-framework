@@ -266,6 +266,50 @@ class OllamaLLM(BaseLLM):
         log.info("ollama.generated", model=self.model_name, answer_len=len(answer))
         return answer
 
+    def backend_info(self) -> dict[str, str]:
+        """
+        Ollama server version and the digest of the model actually served.
+
+        The model name in the config (for example "llama3.1:8b") is a tag that
+        can point to a different build after an ``ollama pull``; the digest
+        identifies the exact weights. Both are read from the local server
+        (``GET /api/version`` and ``GET /api/tags``). Any failure is reported
+        as "unavailable" (server unreachable, unexpected response) or
+        "not found" (model not in the local list), never raised.
+
+        Returns:
+            {"llm_backend", "llm_model", "ollama_version", "llm_model_digest"}
+        """
+        info = {
+            "llm_backend": "ollama",
+            "llm_model": self.model_name,
+            "ollama_version": "unavailable",
+            "llm_model_digest": "unavailable",
+        }
+        try:
+            client = self._get_client()
+        except ImportError:
+            return info
+        try:
+            response = client.get("/api/version")
+            response.raise_for_status()
+            info["ollama_version"] = str(response.json().get("version", "unavailable"))
+        except Exception:  # noqa: BLE001 — reported as a value, see docstring
+            pass
+        try:
+            response = client.get("/api/tags")
+            response.raise_for_status()
+            names = {self.model_name, f"{self.model_name}:latest"}
+            digest = "not found"
+            for entry in response.json().get("models", []) or []:
+                if entry.get("name") in names or entry.get("model") in names:
+                    digest = str(entry.get("digest", "not found"))
+                    break
+            info["llm_model_digest"] = digest
+        except Exception:  # noqa: BLE001 — reported as a value, see docstring
+            pass
+        return info
+
     def build_rag_prompt(self, query: str, context_docs: list[str]) -> str:
         """
         Construct a RAG prompt from a query and retrieved document texts.

@@ -636,7 +636,7 @@ Lettura, preliminare: il retriever cambia di poco quanto spesso la variante entr
 
 **Effetto dell'avvelenamento sul retrieval di claim non toccati (BM25 e ibrido).** Con il denso, sui record puliti la risposta coincide con quella senza attacco (0,000). Con BM25 no (0,007), e non è rumore: i punteggi BM25 dipendono dalle statistiche dell'intero corpus (frequenza delle parole nei documenti, lunghezza media), e aggiungere i documenti avvelenati le cambia. Sui record puliti di `num` k1, 237 su 807 hanno con BM25 un top-5 diverso da quello della run senza attacco; con l'ibrido 107 su 815; con il denso nessuno. In tutti i casi con lo stesso top-5 anche la risposta è uguale, quindi la generazione resta deterministica. Conseguenze: (1) con i retriever lessicali l'avvelenamento di una parte del corpus sposta il retrieval anche per domande non toccate, un effetto collaterale da riportare; (2) con BM25 e ibrido la run senza attacco è un riferimento un po' meno pulito che col denso, e per questo con BM25 avvelenata − controfattuale (−0,156) e avvelenata − senza attacco (−0,227) differiscono più che col denso.
 
-## 4.15 Terza campagna: generatori, profondità del contesto, dose–risposta (piano, 20 novembre 2026)
+## 4.15 Terza campagna: generatori, profondità del contesto, dose–risposta (20–24 novembre 2026)
 
 Nessuno di questi esperimenti dipende da A3 o dalle decisioni aperte con la collega (Source Integrity, prompt delle query, M03): usano solo la misura primaria, che non è l'adozione NLI.
 
@@ -654,6 +654,51 @@ Nessuno di questi esperimenti dipende da A3 o dalle decisioni aperte con la coll
 | E5, dose–risposta | tassi 1, 5 e 25% (10 e 50 ci sono già), denso e BM25 | nelle cartelle esistenti `corpus_sweep_multi2_k1_genq_pcs_preliminary` e `…_sparse_pcs_preliminary` | 30 |
 
 Configurazioni generate con le nuove opzioni `--llm-model` e `--top-k` di `scripts/make_corpus_sweep.py`; con i valori predefiniti i nomi delle cartelle restano quelli di prima (verificato: nessuna configurazione esistente cambia). Per E1 i modelli vanno scaricati prima (`ollama pull qwen2.5:7b`, `ollama pull mistral:7b`). Tutte le run nuove registrano versione di Ollama e impronta del modello (`environment` in `results.json`).
+
+### Esecuzione e controlli
+
+64 run (E1 ed E4 sul Mac di Susy il 21 novembre; E5 sul Mac di Domenico il 21 e ripetuto sul Mac di Susy il 22), codice `246b12d`, Ollama 0.40.16, impronte dei modelli registrate (llama3.1:8b `46e0c10c…`, qwen2.5:7b `845dbda0…`, mistral:7b `6577803a…`). Tutte con 218 claim, il numero giusto di documenti nel contesto, nessuna risposta vuota, controfattuale presente esattamente quando c'è veleno nel contesto. Con i tre generatori il retrieval è identico: il confronto tra generatori è appaiato. Analisi con `scripts/analyze_answers.py --nli` (`results/analisi_e1_*`, `analisi_e4_*`, `analisi_e5_*`).
+
+### Risultati (preliminari; misure di risposta non ancora calibrate con A3)
+
+**E1 — H1 confermata.** Avvelenata − senza attacco (stesso generatore), record con la propria variante nel top-5, 50%:
+
+| Generatore | Varianti | n | P(la risposta implica il vero) | Adozione NLI | P(vero) senza attacco |
+|---|---|---|---|---|---|
+| llama3.1:8b | `num` k1 | 517 | −0,255 [−0,326; −0,183] | +0,147 | 0,506 |
+| qwen2.5:7b | `num` k1 | 517 | −0,129 [−0,195; −0,062] | +0,191 | 0,508 |
+| mistral:7b | `num` k1 | 517 | −0,087 [−0,146; −0,024] | +0,116 | 0,357 |
+| llama3.1:8b | corpus ufficiale | 518 | −0,221 [−0,290; −0,155] | +0,158 | 0,507 |
+| qwen2.5:7b | corpus ufficiale | 518 | −0,132 [−0,190; −0,070] | +0,172 | 0,507 |
+| mistral:7b | corpus ufficiale | 518 | −0,078 [−0,144; −0,017] | +0,129 | 0,358 |
+
+Il calo c'è con tutti e tre i generatori e con entrambi i tipi di varianti. L'entità cambia (esplorativo): llama perde circa metà del P(vero) di partenza, qwen e mistral circa un quarto. Qwen adotta la variante più spesso di llama ma perde meno il vero (P(la risposta implica la variante), avvelenata − senza attacco, +0,106 [0,042; 0,170]): le sue risposte sembrano riportare entrambe le versioni. Mistral risponde in modo meno netto anche senza veleno. Confronto appaiato sulle risposte avvelenate: qwen − llama P(vero) +0,128 [0,059; 0,189], mistral − llama +0,018 [−0,048; 0,084].
+
+**E4 — H2 confermata solo in parte.** Avvelenata − senza attacco (stesso top-k), `num` k1, 50%:
+
+| Contesto | n | P(la risposta implica il vero) | Adozione NLI |
+|---|---|---|---|
+| top-3 | 510 | −0,257 [−0,329; −0,183] | +0,118 [0,075; 0,172] |
+| top-5 | 517 | −0,255 [−0,326; −0,183] | +0,147 [0,102; 0,197] |
+| top-10 | 527 | −0,180 [−0,248; −0,109] | +0,167 [0,120; 0,217] |
+
+Con top-10 il calo è minore (risposte avvelenate, top-10 − top-5: P(vero) +0,103 [0,056; 0,155], contro +0,025 senza attacco): più contesto attenua l'effetto. Con top-3 il calo è uguale a top-5: la seconda metà di H2 non si conferma.
+
+**E5 — H3 confermata.** Avvelenata − senza attacco, record con la propria variante nel top-5:
+
+| Tasso | Denso: n | Denso: P(vero) | BM25: n | BM25: P(vero) | Variante propria nel top-5 (denso / BM25) | BM25: claim non toccati con top-5 cambiato |
+|---|---|---|---|---|---|---|
+| 1% | 17 | −0,209 [−0,392; −0,052] | 16 | −0,097 [−0,298; 0,079] | 0,016 / 0,015 | 9,1% |
+| 5% | 49 | −0,325 [−0,467; −0,197] | 47 | −0,268 [−0,408; −0,126] | 0,045 / 0,043 | 18,6% |
+| 10% | 110 | −0,261 [−0,358; −0,168] | 106 | −0,240 [−0,337; −0,146] | 0,101 / 0,097 | 27,7% |
+| 25% | 260 | −0,234 [−0,321; −0,151] | 250 | −0,216 [−0,295; −0,138] | 0,239 / 0,229 | 40,6% |
+| 50% | 517 | −0,255 [−0,326; −0,183] | 496 | −0,227 [−0,292; −0,164] | 0,474 / 0,455 | 49,2% |
+
+Il calo per record esposto non ha un andamento col tasso (gli intervalli si sovrappongono; all'1% ci sono solo 16–17 record esposti). Cresce invece, quasi in proporzione al tasso, la quota di record esposti, e quindi l'effetto complessivo sul sistema (circa esposizione × calo: 0,003 all'1%, 0,12 al 50% col denso). Con BM25 l'avvelenamento cambia il top-5 anche dei claim non toccati, già dal 9% all'1%; col denso mai.
+
+### Rumore di fondo della generazione tra run diverse
+
+Nelle run E5 all'1 e al 5%, 20 record puliti (4 col denso, 16 con BM25, su circa 4.200 con lo stesso top-5 della baseline) hanno domanda e contesto identici a quelli della baseline senza attacco ma una risposta leggermente diversa; nelle run al 10 e al 50% (campagna 2) nessuno. Verifiche: le baseline densa e BM25 rifatte il 22 novembre sono identiche a quelle del 19–20 (218 su 218); le 30 run E5 rifatte sul Mac di Susy danno le stesse risposte di quelle del Mac di Domenico (6.539 su 6.540, stesso retrieval in tutti i 6.540 record); le differenze non dipendono dal fatto che il record precedente fosse avvelenato. Quindi: la generazione è riproducibile per una data run su qualsiasi Mac, ma la stessa domanda con lo stesso contesto può dare una risposta leggermente diversa in run diverse. Causa probabile: Ollama riusa i calcoli della richiesta precedente (cache del prompt) e il risultato numerico dipende da quale richiesta c'era prima. Il rumore di fondo tra run è dello 0,3% dei record puliti col denso e dell'1,4% con BM25: piccolo rispetto agli effetti misurati, da riportare come limite. Per le prossime campagne: aggiornamento automatico di Ollama disattivato, versione registrata (fatto dal 20 novembre).
 
 ## 5. Limiti e interpretazione
 
@@ -679,6 +724,7 @@ Entrambe le versioni confermano il trend crescente, ma i valori sono sovrastimat
 In ordine di priorità; la roadmap completa con gli esperimenti proposti è nel documento di progetto `EIGER_roadmap_novembre_2026`.
 
 1. **Seconda campagna: chiusa il 20 novembre** (sezione 4.14). Tutti i blocchi completati e analizzati; parità tra i Mac verificata per denso, BM25 e ibrido.
+   **Terza campagna: chiusa il 24 novembre** (sezione 4.15): H1 confermata, H2 in parte, H3 confermata; rumore di fondo della generazione tra run misurato.
 2. **A3, calibrazione umana** (sezione 4.13): annotazione della collega, poi `compare` e `retest`. È il prerequisito per qualunque affermazione sull'adozione NLI: in A1 la misura "adotta" la variante nel 21% delle risposte senza veleno.
 3. **Decisioni con la collega**: definizione di Source Integrity (proposta: SI = 1 − media di P(contraddizione | documento, claim)); prompt delle query (metà delle query generate per il corpus ufficiale, e 17 su 100 per Snopes, ripetono il valore vero; l'insieme `multi2` le esclude per costruzione); versione principale dell'audit A2; cambi di nomi di persona (M03): Susy è favorevole (20 novembre); prima di introdurli serve il passaggio dalla gate etica concordata con la collega (protocollo di allineamento, punto 2) e una voce nel registro delle decisioni etiche.
 4. **Piano statistico** prima della prossima campagna: un endpoint primario dichiarato in anticipo (proposta: P(la risposta implica il vero), avvelenata − senza attacco, record con la propria variante nel top-5, 50%), tutto il resto esplorativo; correzione per confronti multipli o, in alternativa, replica obbligatoria su un secondo insieme di claim prima di citare un effetto.

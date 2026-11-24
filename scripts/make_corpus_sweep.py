@@ -24,6 +24,10 @@ Multi-element variants: ``--corpus multi2`` / ``multi3`` with ``--k`` uses the
 rule-based variants that change k numbers or years (eiger/datasets/
 multi_element.py; generate data/multi_element/variants.csv first). The same
 claims and seeds are used for every k, so k is compared within claim.
+Graded variants (E10) on the multi2 claims: ``multi2_grad`` (and
+``multi2_grad_noel``, election years left unchanged) with ``--k`` 1..4 = the
+level of intensity of a single changed element.
+
 Other families on the multi2 claims: ``multi2_numrand`` (random magnitude),
 ``multi2_mix`` (numbers, places, months, scale and direction words, fixed
 rule), ``multi2_mixrand`` (same elements, random replacement).
@@ -79,6 +83,9 @@ DATASETS = {
     ("multi2_numrand", "genq", False): "corpus_claim_official_multi2_numrand_genq",
     ("multi2_mix", "genq", False): "corpus_claim_official_multi2_mix_genq",
     ("multi2_mixrand", "genq", False): "corpus_claim_official_multi2_mixrand_genq",
+    # Graded variants (E10): same claims as multi2, --k is the level 1..4.
+    ("multi2_grad", "genq", False): "corpus_claim_official_multi2_genq",
+    ("multi2_grad_noel", "genq", False): "corpus_claim_official_multi2_genq",
 }
 
 # Which corpus file the corpus_precomputed attack reads its manipulations from.
@@ -91,11 +98,15 @@ VARIANT_SOURCE = {
     "multi2_numrand": "multi_element",
     "multi2_mix": "multi_element",
     "multi2_mixrand": "multi_element",
+    "multi2_grad": "multi_element",
+    "multi2_grad_noel": "multi_element",
 }
-MAX_K = {"multi2": 2, "multi3": 3, "multi2_numrand": 2, "multi2_mix": 2, "multi2_mixrand": 2}
+MAX_K = {"multi2": 2, "multi3": 3, "multi2_numrand": 2, "multi2_mix": 2, "multi2_mixrand": 2,
+         "multi2_grad": 4, "multi2_grad_noel": 4}
 # Variants file family of each multi-element corpus (eiger/datasets/multi_element.py).
 FAMILY = {"multi2": "num", "multi3": "num", "multi2_numrand": "numrand",
-          "multi2_mix": "mix", "multi2_mixrand": "mixrand"}
+          "multi2_mix": "mix", "multi2_mixrand": "mixrand",
+          "multi2_grad": "grad", "multi2_grad_noel": "grad_noel"}
 
 
 RETRIEVERS = ("dense", "sparse", "hybrid")
@@ -152,6 +163,8 @@ def build_config(
         params["k"] = k
         if FAMILY.get(corpus, "num") != "num":
             params["family"] = FAMILY[corpus]
+        if FAMILY.get(corpus, "num").startswith("grad"):
+            params["missing"] = "skip"
     attacks = (
         [{"name": "corpus_precomputed", "poison_rate": rate_pct / 100, "params": params}]
         if rate_pct > 0 else []
@@ -160,6 +173,11 @@ def build_config(
         manipulations = "no attack (baseline)"
     elif k is not None and not corpus_variants and FAMILY[corpus] == "num":
         manipulations = f"rule-based multi-element variants, k={k} changed numbers/years"
+    elif k is not None and not corpus_variants and FAMILY[corpus].startswith("grad"):
+        manipulations = (
+            f"rule-based graded variants ({FAMILY[corpus]}), level L{k} of 4: "
+            "one element, increasing intensity"
+        )
     elif k is not None and not corpus_variants:
         manipulations = f"rule-based multi-element variants ({FAMILY[corpus]}), k={k} changed elements"
     else:
@@ -209,7 +227,12 @@ def main() -> int:
                         help="engineering_extra = claims only in the larger corpus (disjoint from official); "
                              "multi2/multi3 = official claims with >= 2/3 numeric elements, rule-based "
                              "variants changing --k of them")
-    parser.add_argument("--k", type=int, help="multi-element corpora only: number of changed elements")
+    parser.add_argument(
+        "--k",
+        type=int,
+        help="multi-element corpora only: number of changed elements "
+        "(multi2_grad*: level of intensity 1..4)",
+    )
     parser.add_argument("--corpus-variants", action="store_true",
                         help="multi-element corpora: poison with the official corpus variant (baseline)")
     parser.add_argument("--pcs", action="store_true",

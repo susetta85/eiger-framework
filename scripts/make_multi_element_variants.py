@@ -7,7 +7,9 @@ Families (eiger/datasets/multi_element.py has the rules and the ethics
 boundaries): num (numbers and years, fixed rule; the default, file
 variants.csv), numrand (same elements, random magnitude), mix (numbers plus
 US states, countries, months, scale and direction words, fixed rule),
-mixrand (same elements as mix, random replacement).
+mixrand (same elements as mix, random replacement), grad and grad_noel
+(E10: one element at four increasing intensities, k = level; grad_noel
+leaves election years unchanged).
 
 The output is git-ignored (data/) and must not be published. It is
 deterministic: every machine regenerates it from the versioned corpus and
@@ -38,7 +40,8 @@ def generate(family: str, out: Path, max_k: int, seed: int, show: int, claims) -
     digest = write_variants(rows, out)
     per_claim = Counter(r["claim_id"] for r in rows)
     print(f"\n[{family}] claims with >= 1 element: {len(per_claim)}")
-    for k in range(1, max_k + 1):
+    levels = 4 if FAMILIES[family].mode == "graded" else max_k
+    for k in range(1, levels + 1):
         print(f"  claims with a k={k} variant: {sum(1 for r in rows if int(r['k']) == k)}")
     for row in rows[:show]:
         print(f"\n[{row['claim_id']} k={row['k']}] {row['changed_element']}\n  {row['claim_text']}")

@@ -35,7 +35,9 @@ reads ``corpus_claim/rag_claims_engineering.csv`` (Mistral-only, larger).
 ``multi_element`` reads ``data/multi_element/variants.csv`` (rule-based
 changes to k numbers or years, see eiger/datasets/multi_element.py) and
 needs ``k``: ``params: {variant_source: multi_element, k: 2}``; ``family``
-(default ``num``) picks the variants file (numrand, mix, mixrand).
+(default ``num``) picks the variants file (numrand, mix, mixrand, grad,
+grad_noel); ``missing: skip`` leaves a claim without a variant unpoisoned
+instead of raising (used by the graded sweeps, E10).
 
 ERS
 ----
@@ -120,6 +122,12 @@ class CorpusPrecomputedAttack(BaseAttack):
                 "(expected 'official', 'engineering' or 'multi_element')."
             )
         if row is None:
+            # Graded variants (E10) exist for 210 of the 218 multi2 claims; with
+            # ``missing: skip`` the others stay unpoisoned (the corpus builder
+            # counts them in skipped_noop), so the corpus and the claims stay
+            # those of multi2. Without it a missing variant is an error.
+            if variant_source == "multi_element" and kwargs.get("missing") == "skip":
+                return document
             raise IngestionError(
                 f"No manipulated variant for claim '{document.claim_id}' in {location}."
             )

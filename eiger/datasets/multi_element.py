@@ -257,6 +257,12 @@ FAMILIES = {
         "MULTI_MIX_RAND",
         "2",
     ),
+    # Graded families (E10): ONE element, four increasing intensities; the
+    # "k" column holds the level (1..4), see make_graded_variants().
+    "grad": Family("grad", "graded", NUMERIC_KINDS, "variants_grad.csv", "GRADED_NUM", "3"),
+    "grad_noel": Family(
+        "grad_noel", "graded", NUMERIC_KINDS, "variants_grad_noel.csv", "GRADED_NUM_NOEL", "3"
+    ),
 }
 
 
@@ -445,9 +451,14 @@ def make_variants(
 ) -> list[dict[str, Any]]:
     """
     Nested variants for one claim: one row per k = 1 .. min(max_k, n_elements).
-    Returns [] for a claim without elements of the family's kinds.
+    Returns [] for a claim without elements of the family's kinds. Graded
+    families ignore ``max_k`` and return the four levels of one element.
     """
     spec = FAMILIES[family]
+    if spec.mode == "graded":
+        return make_graded_variants(
+            claim_id, text, generator_seed, include_elections=family == "grad"
+        )
     elements = extract_elements(text, spec.kinds)
     present = {e.value.lower() for e in elements}
     # A direction word whose antonym is already in the claim cannot be changed
@@ -509,6 +520,242 @@ def make_variants(
             }
         )
     return rows
+
+
+# ─── Graded families (E10): one element, four increasing intensities ─────────
+#
+# Question: how large must a change be before the answer follows the variant?
+# Each claim gets four variants (levels L1..L4) that change the SAME element in
+# the SAME direction with increasing intensity, following the graded-threshold
+# prompt agreed with the collaborator (docs/EXPERIMENTS.md, section 4.16), but
+# with fixed rules instead of a language model:
+#
+# - quantity (integer, decimal, percentage change): always upwards, +15%, +40%,
+#   +100%, +250% (targets 10-20%, 25-50%, 75-150%, >= 200%); at least one unit
+#   more than the previous level, so small counts still grow at every level.
+# - bounded percentage (a share 0-100%): +5, +10, +20, +40 percentage points,
+#   downwards when there are fewer than 40 points of room upwards (one side
+#   always has at least 50). Never below 0 or above 100.
+# - year (no election in sight): +-1, 3, 10, 25 years, never after
+#   LATEST_YEAR nor before 1800; direction drawn once per claim.
+# - election year (family "grad" only): presidential general elections move by
+#   1-4 presidential cycles (4 years each, never after LATEST_PRESIDENTIAL),
+#   House/midterm elections by 1-4 two-year cycles. Senate, primary, runoff,
+#   special, state, local, gubernatorial and unspecified elections are not
+#   changed (their valid years cannot be established from the claim alone),
+#   and neither are elections of other countries (a country name or a word in
+#   _FOREIGN_WORDS anywhere in the claim); the generator takes the claim's
+#   next element instead. A year counts as an election year when the claim
+#   has an election word anywhere (claims are one sentence: the whole claim
+#   is the context, which is the conservative choice). Family "grad_noel"
+#   never changes a year in a claim with an election word.
+# - a year keeps its order with the claim's other years ("announced in 2021
+#   ... the 2022 election": 2021 cannot move past 2022).
+# - endpoints of a range ("65 to 70 percent", "between 3 and 5") are never
+#   changed: changing one of them could reverse the range.
+# - numbers that work as identifiers (Route 66, Section 8, Title 42,
+#   Proposition 8, Model 3, ...: the word before is in IDENTIFIER_WORDS) are
+#   never changed; glued identifiers (COVID-19, F-35, 9/11) are already
+#   excluded by NUMBER_RE.
+#
+# The element is the first of the claim's numeric elements, in the same
+# shuffled order as family "num" (so, when allowed, it is the element that
+# num k=1 changed by +-1 / +-10%), that admits all four levels. Known limits of
+# the rules: political roles around a shifted year are not checked ("former
+# President Trump ... the 2004 election"), and a share introduced by a growth
+# word ("debt up to 80 percent of GDP") is treated as a percentage change.
+
+GRADED_LEVELS = 4
+GRADED_RELATIVE = (0.15, 0.40, 1.00, 2.50)
+GRADED_POINTS = (5, 10, 20, 40)
+GRADED_YEARS = (1, 3, 10, 25)
+LATEST_YEAR = 2026
+LATEST_PRESIDENTIAL = 2024
+EARLIEST_YEAR = 1800
+
+IDENTIFIER_WORDS = frozenset(
+    {
+        "act", "amendment", "apollo", "apartment", "area", "article", "bill", "boeing",
+        "box", "building", "category", "channel", "chapter", "class", "code", "district",
+        "division", "episode", "exhibit", "fleet", "flight", "floor", "form", "fox",
+        "gate", "grade", "group", "highway", "hr", "interstate", "issue", "item", "level",
+        "lot", "model", "no", "number", "page", "part", "phase", "pier", "precinct",
+        "prop", "proposition", "psalm", "region", "room", "route", "rule", "sb", "hb",
+        "season", "section", "sector", "stage", "station", "suite", "terminal", "tier",
+        "title", "type", "unit", "verse", "version", "volume", "ward", "zone",
+    }
+)
+_ELECTION_WORDS = (
+    "election", "elections", "elected", "reelected", "re-elected", "reelection",
+    "re-election", "midterm", "midterms", "primary", "primaries", "caucus", "caucuses",
+    "runoff", "ballot", "ballots", "vote", "voted", "voters", "voting", "campaign",
+    "nominee", "nomination", "inauguration", "inaugurated", "race",
+)
+_NOT_CHANGEABLE_ELECTIONS = (
+    "senate", "senator", "primary", "primaries", "caucus", "caucuses", "runoff",
+    "special", "governor", "gubernatorial", "mayor", "mayoral", "state", "local",
+    "recall", "county", "city", "municipal", "legislative", "legislature",
+)
+_FOREIGN_WORDS = frozenset(
+    {w.lower() for w in COUNTRIES}
+    | {
+        "russian", "british", "canadian", "mexican", "french", "german", "israeli",
+        "ukrainian", "indian", "brazilian", "venezuelan", "italian", "chinese",
+        "japanese", "european", "uk", "parliament", "parliamentary", "prime", "putin",
+    }
+)
+_GROWTH_WORDS = (
+    "increase", "increased", "increases", "rise", "rose", "risen", "grew", "grow",
+    "growth", "jump", "jumped", "up", "decline", "declined", "drop", "dropped",
+    "fell", "fall", "down", "cut", "raise", "raised", "higher", "lower", "more", "less",
+)
+_WORD_RE = re.compile(r"[a-z][a-z.\-]*")
+_RANGE_AFTER = re.compile(r"\s*(?:%|percent)?\s*(?:to|-|–|—|and)\s*\$?\d", re.IGNORECASE)
+_RANGE_BEFORE = re.compile(
+    r"(?:\d\s*(?:%|percent)?\s*(?:to|-|–|—|and)|\bbetween|\bfrom)\s*\$?$", re.IGNORECASE
+)
+
+
+def _words(text: str) -> list[str]:
+    # Trailing dots are sentence ends ("election."), not part of the word.
+    return [w.rstrip(".") for w in _WORD_RE.findall(text.lower())]
+
+
+def _first_span(text: str, value: str) -> tuple[int, int] | None:
+    for match in NUMBER_RE.finditer(text):
+        if match.group(1) == value:
+            return match.start(1), match.end(1)
+    return None  # pragma: no cover - value always comes from extract_elements(text)
+
+
+def graded_kind(text: str, element: Element, include_elections: bool) -> str | None:
+    """
+    Kind used by the graded rules for this element, or None if the element
+    must not be changed (identifier, unchangeable election year).
+    """
+    start, end = _first_span(text, element.value) or (0, 0)
+    before = _words(text[max(0, start - 40) : start])
+    after = text[end : end + 12].lower()
+    if before and before[-1].replace(".", "") in IDENTIFIER_WORDS:
+        return None
+    if _RANGE_AFTER.match(text, end) or _RANGE_BEFORE.search(text[max(0, start - 30) : start]):
+        return None  # endpoint of a range ("65 to 70 percent"): changing it could reverse it
+    if element.kind == "year":
+        window = set(_words(text))
+        if not window & set(_ELECTION_WORDS):
+            return "year"
+        foreign = window & _FOREIGN_WORDS or any(
+            " " in name and name in text.lower() for name in _FOREIGN_WORDS
+        )
+        if not include_elections or foreign or window & set(_NOT_CHANGEABLE_ELECTIONS):
+            return None
+        if window & {"presidential", "president", "white"}:
+            return "election_year_presidential" if int(element.value) % 4 == 0 else None
+        if window & {"house", "midterm", "midterms", "congressional", "congress"}:
+            return "election_year_house" if int(element.value) % 2 == 0 else None
+        return None
+    is_percent = after.startswith("%") or after.lstrip().startswith(("percent", "per cent"))
+    if is_percent:
+        value = float(element.value.replace(",", ""))
+        if value <= 100 and not set(before[-5:]) & set(_GROWTH_WORDS):
+            return "percent_points"
+        return "percent_change"
+    return element.kind  # "integer" | "decimal"
+
+
+def _graded_numbers(value_text: str, kind: str, levels: int = GRADED_LEVELS) -> list[str]:
+    """Four strictly monotone new values for a quantity or a bounded percentage."""
+    decimals = len(value_text.split(".")[1]) if "." in value_text else 0
+    unit = 10.0**-decimals
+    value = float(value_text.replace(",", ""))
+    if kind == "percent_points":
+        # A share is at most 100, so one side always has >= 50 points of room.
+        sign = 1 if 100 - value >= GRADED_POINTS[-1] else -1
+        targets = [value + sign * step for step in GRADED_POINTS[:levels]]
+    else:
+        sign = 1
+        targets = [value * (1 + p) for p in GRADED_RELATIVE[:levels]]
+    out: list[float] = []
+    previous = value
+    for target in targets:
+        new = round(target, decimals)
+        if sign * (new - previous) < unit - 1e-9:
+            new = round(previous + sign * unit, decimals)
+        out.append(new)
+        previous = new
+    if decimals:
+        return [f"{v:.{decimals}f}" for v in out]
+    return [_format_int(int(v), value_text) for v in out]
+
+
+def _graded_years(
+    value: int, kind: str, sign: int, other_years: frozenset[int] = frozenset()
+) -> list[str] | None:
+    """
+    Four years in one direction (sign), or the other one if the first does not
+    fit. Every new year stays on the same side of the claim's other years, so
+    the order of the events in the claim does not change.
+    """
+    if kind == "election_year_presidential":
+        steps, latest = [4, 8, 12, 16], LATEST_PRESIDENTIAL
+    elif kind == "election_year_house":
+        steps, latest = [2, 4, 6, 8], LATEST_YEAR
+    else:
+        steps, latest = list(GRADED_YEARS), LATEST_YEAR
+    for direction in (sign, -sign):
+        years = [value + direction * step for step in steps]
+        same_side = all((y > o) == (value > o) and y != o for y in years for o in other_years)
+        if same_side and all(EARLIEST_YEAR <= y <= latest for y in years):
+            return [str(y) for y in years]
+    return None
+
+
+def make_graded_variants(
+    claim_id: str, text: str, generator_seed: int = 0, include_elections: bool = True
+) -> list[dict[str, Any]]:
+    """
+    Four variants (k = level 1..4) changing ONE element of the claim with
+    increasing intensity (see the comment above). Returns [] when no numeric
+    element of the claim admits four levels.
+    """
+    family = "grad" if include_elections else "grad_noel"
+    spec = FAMILIES[family]
+    elements = extract_elements(text, NUMERIC_KINDS)
+    order = list(range(len(elements)))
+    _rng_for(claim_id, generator_seed).shuffle(order)  # same order as family "num"
+    direction_rng = _rng_for(f"graded:{claim_id}", generator_seed)
+    others = {e.value for e in elements}
+    for idx in order:
+        element = elements[idx]
+        kind = graded_kind(text, element, include_elections)
+        if kind is None:
+            continue
+        if element.kind == "year" and kind not in {"percent_points", "percent_change"}:
+            other_years = frozenset(
+                int(e.value) for e in elements if e.kind == "year" and e.value != element.value
+            )
+            new_values = _graded_years(
+                int(element.value), kind, direction_rng.choice((-1, 1)), other_years
+            )
+        else:
+            new_values = _graded_numbers(element.value, kind)
+        if not new_values or set(new_values) & (others - {element.value}):
+            continue
+        return [
+            {
+                "claim_id": claim_id,
+                "k": level,
+                "n_elements": len(elements),
+                "claim_original_reference": text,
+                "claim_text": apply_changes(text, {element.value: new}),
+                "changed_element": f"{element.value} -> {new} [{kind}]",
+                "manipulation_category": spec.category,
+                "generator_version": spec.version,
+                "generator_seed": generator_seed,
+            }
+            for level, new in enumerate(new_values, start=1)
+        ]
+    return []
 
 
 CHANGE_RE = re.compile(r"(?P<old>.+?) -> (?P<new>.+?)(?: \[(?P<kind>\w+)\])?$")
